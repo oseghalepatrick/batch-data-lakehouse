@@ -1,0 +1,101 @@
+checks for ${TABLE}:
+
+  - row_count > 0:
+      name: Daily sales aggregation contains records
+
+  - schema:
+      fail:
+        when required column missing:
+          [
+            sales_date,
+            sales_status,
+            store_name,
+            city,
+            country,
+            product_name,
+            category
+          ]
+
+        when wrong column type:
+          sales_date: date
+          sales_status: varchar
+          store_name: varchar
+          city: varchar
+          country: varchar
+          product_name: varchar
+          category: varchar
+          total_transactions: bigint
+          unique_customers: bigint
+          total_units_sold: bigint
+          total_revenue: double
+          average_order_value: double
+
+  - duplicate_count(sales_date, sales_status, store_name, city, country, product_name, category) = 0:
+      name: Daily sales aggregation grain is unique
+
+  - missing_count(sales_date) = 0:
+      name: sales_date is complete
+
+  - missing_count(sales_status) = 0:
+      name: sales_status is complete
+
+  - missing_count(store_name) = 0:
+      name: store_name is complete
+
+  - missing_count(product_name) = 0:
+      name: product_name is complete
+
+  - missing_count(category) = 0:
+      name: category is complete
+
+  - missing_count(total_transactions) = 0:
+      name: total_transactions is complete
+
+  - missing_count(unique_customers) = 0:
+      name: unique_customers is complete
+
+  - missing_count(total_units_sold) = 0:
+      name: total_units_sold is complete
+
+  - missing_count(total_revenue) = 0:
+      name: total_revenue is complete
+
+  - missing_count(average_order_value) = 0:
+      name: average_order_value is complete
+
+  - invalid_count(sales_status):
+      name: sales_status is within allowed values
+      valid values:
+        - completed
+        - pending
+        - cancelled
+      fail: when > 0
+
+  - invalid_count(total_transactions):
+      name: total_transactions must be positive
+      valid min: 1
+      fail: when > 0
+
+  - invalid_count(unique_customers):
+      name: unique_customers must be positive
+      valid min: 1
+      fail: when > 0
+
+  - invalid_count(total_units_sold):
+      name: total_units_sold must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - invalid_count(total_revenue):
+      name: total_revenue must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - invalid_count(average_order_value):
+      name: average_order_value must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - freshness(sales_date):
+      name: Daily sales aggregation is current
+      warn: when > 1d

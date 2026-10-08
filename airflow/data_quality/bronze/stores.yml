@@ -1,0 +1,16 @@
+checks for ${TABLE}:
+  - row_count > 0:
+      name: Record count
+  - schema:
+      fail:
+        when required column missing: 
+          [store_id, city]
+        when wrong column type:
+          store_id: bigint
+          city: varchar
+  - duplicate_count(store_id) = 0:
+      name: All stores are unique
+  - missing_count(store_id) = 0:
+      name: All stores are unique
+  - missing_count(store_id) = 0:
+      name: All stores have a key

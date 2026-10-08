@@ -1,0 +1,11 @@
+apache-airflow[celery]==3.3.2
+Faker==38.2.0
+faker-commerce==1.0.4
+pydantic==2.12.4
+pycountry==26.2.16
+pyiceberg[s3fs,pyarrow,pyiceberg-core]==0.12.0
+pandas==3.0.6
+apache-airflow-providers-trino==6.7.0
+astronomer-cosmos[dbt-trino]==1.15.1
+dbt-trino==1.10.4
+dbt-core==1.12.5

@@ -1,0 +1,200 @@
+version: 2
+
+models:
+
+  - name: stg_stores
+    description: >
+      Clean staging representation of store master data sourced
+      from the silver stores Iceberg table.
+
+    columns:
+
+      - name: store_id
+        description: Unique identifier for the store.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: store_name
+        description: Name of the store.
+        data_tests:
+          - not_null
+
+      - name: city
+        description: City where the store is located.
+        data_tests:
+          - not_null
+
+      - name: country
+        description: Country where the store is located.
+        data_tests:
+          - not_null
+
+
+  - name: stg_customers
+    description: >
+      Staging representation of the customer SCD Type II dimension.
+      Multiple records for the same customer_id are expected when
+      customer attributes change over time.
+
+    columns:
+
+      - name: customer_id
+        description: Business identifier of the customer.
+        data_tests:
+          - not_null
+
+      - name: customer_name
+        description: Customer's name.
+        data_tests:
+          - not_null
+
+      - name: email
+        description: Customer email address.
+
+      - name: phone
+        description: Customer telephone number.
+
+      - name: city
+        description: >
+          Customer city during the corresponding SCD Type II
+          effective period.
+
+      - name: country
+        description: Customer country during the effective period.
+
+      - name: segment
+        description: Customer segment.
+
+      - name: signup_date
+        description: Date on which the customer registered.
+
+      - name: effective_start
+        description: >
+          Timestamp at which this version of the customer record
+          became effective.
+        data_tests:
+          - not_null
+
+      - name: effective_end
+        description: >
+          Timestamp at which this version of the customer record
+          ceased to be effective. NULL indicates the current version.
+
+      - name: is_current
+        description: >
+          Indicates whether this is the current version of the
+          customer record.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+
+  - name: stg_products
+    description: >
+      Staging representation of the product SCD Type II dimension.
+      Multiple records for the same product_id are expected when
+      product attributes such as price change.
+
+    columns:
+
+      - name: product_id
+        description: Business identifier of the product.
+        data_tests:
+          - not_null
+
+      - name: product_name
+        description: Product name.
+        data_tests:
+          - not_null
+
+      - name: category
+        description: Product category.
+        data_tests:
+          - not_null
+
+      - name: price
+        description: >
+          Product price applicable during the corresponding
+          effective period.
+        data_tests:
+          - not_null
+
+      - name: effective_start
+        description: >
+          Timestamp at which this version of the product became
+          effective.
+        data_tests:
+          - not_null
+
+      - name: effective_end
+        description: >
+          Timestamp at which this version of the product ceased
+          to be effective. NULL indicates the current version.
+
+      - name: is_current
+        description: >
+          Indicates whether this is the current version of the
+          product record.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+
+  - name: stg_sales
+    description: >
+      Clean staging representation of sales transactions sourced
+      from the silver sales Iceberg table.
+
+    columns:
+
+      - name: transaction_id
+        description: Unique identifier for the transaction.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: quantity
+        description: Number of units included in the transaction.
+        data_tests:
+          - not_null
+          - positive_value
+
+      - name: transaction_timestamp
+        description: Timestamp at which the transaction occurred.
+        data_tests:
+          - not_null
+
+      - name: transaction_date
+        description: Calendar date derived from transaction_timestamp.
+        data_tests:
+          - not_null
+
+      - name: payment_method
+        description: Payment method used for the transaction.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - credit_card
+                  - debit_card
+                  - cash
+                  - digital_wallet
+
+      - name: status
+        description: Current status of the transaction.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - completed
+                  - pending
+                  - cancelled

@@ -1,0 +1,22 @@
+checks for ${TABLE}:
+  - row_count > 0:
+      name: Record count
+  - schema:
+      fail:
+        when required column missing: 
+          [product_id, product_name, category]
+        when wrong column type:
+          product_id: bigint
+          price: double
+          effective_start: varchar
+  - duplicate_count(product_id) = 0:
+      name: All product are unique
+  - missing_count(product_id) = 0:
+      name: All product have a key
+  - missing_count(product_name) = 0:
+      name: All product_name not null 
+  - missing_count(category) = 0:
+      name: All category not null 
+  # Check fails when any prices are negative
+  - min(price):
+      fail: when < 0

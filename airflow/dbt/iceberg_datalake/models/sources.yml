@@ -1,0 +1,96 @@
+version: 2
+
+sources:
+
+  - name: silver
+    description: >
+      Silver-layer Iceberg tables containing cleansed and
+      historised operational data.
+
+    database: iceberg
+    schema: silver
+
+    tables:
+
+      - name: customers
+        description: >
+          Customer SCD Type II dimension containing historical
+          versions of customer attributes.
+
+        columns:
+          - name: customer_id
+            description: Customer business identifier.
+
+          - name: effective_start
+            description: Start of the validity period.
+
+          - name: effective_end
+            description: End of the validity period.
+
+          - name: is_current
+            description: Indicates the current customer version.
+
+
+      - name: products
+        description: >
+          Product SCD Type II dimension containing historical
+          product versions, including price changes.
+
+        columns:
+          - name: product_id
+            description: Product business identifier.
+
+          - name: effective_start
+            description: Start of the product version.
+
+          - name: effective_end
+            description: End of the product version.
+
+          - name: is_current
+            description: Indicates the current product version.
+
+
+      - name: stores
+        description: Store master data.
+
+        columns:
+          - name: store_id
+            description: Unique store identifier.
+
+          - name: store_name
+            description: Store name.
+
+          - name: city
+            description: Store city.
+
+          - name: country
+            description: Store country.
+
+
+      - name: sales
+        description: Sales transaction data.
+
+        columns:
+          - name: transaction_id
+            description: Unique transaction identifier.
+
+          - name: customer_id
+            description: Customer associated with the transaction.
+
+          - name: product_id
+            description: Product associated with the transaction.
+
+          - name: store_id
+            description: Store associated with the transaction.
+
+          - name: quantity
+            description: Number of units purchased.
+
+          - name: transaction_timestamp
+            description: Transaction timestamp.
+
+          - name: payment_method
+            description: Payment method used.
+
+          - name: status
+            description: Transaction status.

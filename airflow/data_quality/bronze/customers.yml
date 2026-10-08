@@ -1,0 +1,18 @@
+checks for ${TABLE}:
+  - row_count > 0:
+      name: Record count
+  - schema:
+      fail:
+        when required column missing: 
+          [customer_id, country]
+        when wrong column type:
+          customer_id: bigint
+          country: varchar
+          signup_date: varchar
+          effective_start: varchar
+  - duplicate_count(customer_id) = 0:
+      name: All customers are unique
+  - missing_count(customer_id) = 0:
+      name: All customers have a key
+  - missing_count(segment) = 0:
+      name: All customers have a key

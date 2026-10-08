@@ -1,0 +1,6 @@
+.env
+logs
+server.properties
+.idea
+**/__pycache__/
+**/profiles/

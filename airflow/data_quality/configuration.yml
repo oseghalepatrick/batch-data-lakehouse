@@ -1,0 +1,9 @@
+data_source trino:
+  type: trino
+  host: trino
+  port: 8089
+  catalog: iceberg
+  schema: ${SCHEMA}
+  username: airflow
+  http_scheme: http
+  auth_type: NoAuthentication

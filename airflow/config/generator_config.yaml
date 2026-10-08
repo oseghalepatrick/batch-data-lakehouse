@@ -1,0 +1,72 @@
+data_generation:
+
+  minio:
+    endpoint: "http://minio:9000"
+    access_key: "admin"
+    secret_key: "password123"
+    bucket: "warehouse"
+    root_path: "bronze"
+
+  # Initial dimension size
+  # These values are only used during the first run.
+  # Current values are tracked in checkpoint.json.
+  initial_dimensions:
+    customers: 600
+    products: 150
+    stores: 30
+
+
+  # Hourly transaction generation
+  sales:
+    initial_average_records: 300000 
+    daily_average_records: 10000
+    variation_percentage: 0.30
+
+
+  # Overall chance that any dimension activity happens in an hourly run
+  dimension_change:
+    probability: 0.20
+
+
+  # Dimension-specific behaviour
+  dimensions:
+
+    customers:
+      # Existing customer profiles can change
+      update_probability: 0.30
+      # New customers are occasionally added
+      insert_probability: 0.70
+      # Percentage of existing customers updated
+      update_percentage: 0.05
+      # Percentage of current customers added
+      insert_percentage: 0.17
+
+    products:
+      # Product information changes less frequently
+      # e.g. price/category changes
+      update_probability: 0.15
+      # New products introduced occasionally
+      insert_probability: 0.85
+      update_percentage: 0.05
+      insert_percentage: 0.15
+
+    stores:
+      # Existing stores remain unchanged
+      update_probability: 0.00
+      # New stores are added occasionally
+      insert_probability: 1.00
+      update_percentage: 0.00
+      insert_percentage: 0.05
+
+
+
+  # Output locations
+  paths:
+    output: "output"
+    current: "output/current"
+    dimensions: "output/dimensions"
+    sales: "output/sales"
+
+  # Generator state
+  checkpoint:
+    file: "/opt/airflow/checkpoint/generator_checkpoint.json"

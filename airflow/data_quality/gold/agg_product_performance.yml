@@ -1,0 +1,84 @@
+checks for ${TABLE}:
+
+  # ============================================================
+  # RECORD COUNT
+  # ============================================================
+
+  - row_count > 0:
+      name: Product performance aggregation contains records
+
+
+  # ============================================================
+  # SCHEMA
+  # ============================================================
+
+  - schema:
+      fail:
+        when required column missing:
+          [
+            product_id,
+            product_name,
+            category
+          ]
+
+        when wrong column type:
+          product_id: bigint
+          product_name: varchar
+          category: varchar
+          total_transactions: bigint
+          unique_customers: bigint
+          units_sold: bigint
+          total_revenue: double
+          average_selling_price: double
+
+  - duplicate_count(product_id, product_name, category) = 0:
+      name: Product performance aggregation grain is unique
+
+  - missing_count(product_id) = 0:
+      name: product_id is complete
+
+  - missing_count(product_name) = 0:
+      name: product_name is complete
+
+  - missing_count(category) = 0:
+      name: category is complete
+
+  - missing_count(total_transactions) = 0:
+      name: total_transactions is complete
+
+  - missing_count(unique_customers) = 0:
+      name: unique_customers is complete
+
+  - missing_count(units_sold) = 0:
+      name: units_sold is complete
+
+  - missing_count(total_revenue) = 0:
+      name: total_revenue is complete
+
+  - missing_count(average_selling_price) = 0:
+      name: average_selling_price is complete
+
+  - invalid_count(total_transactions):
+      name: total_transactions must be positive
+      valid min: 1
+      fail: when > 0
+
+  - invalid_count(unique_customers):
+      name: unique_customers must be positive
+      valid min: 1
+      fail: when > 0
+
+  - invalid_count(units_sold):
+      name: units_sold must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - invalid_count(total_revenue):
+      name: total_revenue must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - invalid_count(average_selling_price):
+      name: average_selling_price must be positive
+      valid min: 0.01
+      fail: when > 0

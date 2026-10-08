@@ -1,0 +1,60 @@
+checks for ${TABLE}:
+  - row_count > 0:
+      name: Record count
+  - schema:
+      fail:
+        when required column missing: 
+          [transaction_id, customer_id, product_id, store_id]
+        when wrong column type:
+          transaction_id: bigint
+          customer_id: bigint
+          product_id: bigint
+          store_id: bigint
+          transaction_timestamp: timestamp(6)
+
+  - duplicate_count(transaction_id) = 0:
+      name: All transaction_id are unique
+
+  - missing_count(transaction_id) = 0:
+      name: All transaction_id have a key
+
+  - missing_count(customer_id) = 0:
+      name: All customers have a key
+
+  - values in (customer_id) must exist in customers (customer_id):
+      name: All customer_id values exist in customers
+
+  - values in (product_id) must exist in products (product_id):
+      name: All product_id values exist in products
+
+  - values in (store_id) must exist in stores (store_id):
+      name: All store_id values exist in stores
+
+
+  - invalid_count(quantity):
+      name: No negative values in quantity column
+      valid min: 0
+      warn: when > 0
+
+  - invalid_count(payment_method):
+      name: payment_method outside allowed set
+      valid values:
+        - credit_card
+        - debit_card
+        - cash
+        - digital_wallet
+      warn: when > 0
+      fail: when > 10
+
+  - invalid_count(status):
+      name: status outside allowed set
+      valid values:
+        - completed
+        - pending
+        - cancelled
+      warn: when > 0
+      fail: when > 10
+
+  - freshness(transaction_timestamp):
+      name: check replication with transaction_timestamp is at least 1d old
+      warn: when > 1d

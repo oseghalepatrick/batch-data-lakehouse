@@ -1,0 +1,20 @@
+select cast(transaction_timestamp as date) as sales_date,
+    status as sales_status,
+    store_name,
+    store_city as city,
+    store_country as country,
+    product_name,
+    category,
+    count(distinct transaction_id) as total_transactions,
+    count(distinct customer_id) as unique_customers,
+    sum(quantity) as total_units_sold,
+    sum(total_amount) as total_revenue,
+    avg(total_amount) as average_order_value
+from {{ ref('fact_sales') }}
+group by cast(transaction_timestamp as date),
+    "status",
+    store_name,
+    store_city,
+    store_country,
+    product_name,
+    category

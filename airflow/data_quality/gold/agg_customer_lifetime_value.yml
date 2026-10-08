@@ -1,0 +1,96 @@
+checks for ${TABLE}:
+
+  # ============================================================
+  # RECORD COUNT
+  # ============================================================
+
+  - row_count > 0:
+      name: Customer lifetime value aggregation contains records
+
+
+  # ============================================================
+  # SCHEMA
+  # ============================================================
+
+  - schema:
+      fail:
+        when required column missing:
+          [
+            customer_id,
+            customer_name,
+            city,
+            country,
+            segment
+          ]
+
+        when wrong column type:
+          customer_id: bigint
+          customer_name: varchar
+          city: varchar
+          country: varchar
+          segment: varchar
+          effective_start: date
+          effective_end: date
+          total_orders: bigint
+          lifetime_value: double
+          average_order_value: double
+          total_items_purchased: bigint
+          first_purchase_date: date
+          last_purchase_date: date
+
+  - duplicate_count(customer_id, effective_start) = 0:
+      name: Customer SCD version is unique
+
+  - missing_count(customer_id) = 0:
+      name: customer_id is complete
+
+  - missing_count(customer_name) = 0:
+      name: customer_name is complete
+
+  - missing_count(segment) = 0:
+      name: segment is complete
+
+  - missing_count(effective_start) = 0:
+      name: effective_start is complete
+
+  - missing_count(total_orders) = 0:
+      name: total_orders is complete
+
+  - missing_count(lifetime_value) = 0:
+      name: lifetime_value is complete
+
+  - missing_count(average_order_value) = 0:
+      name: average_order_value is complete
+
+  - missing_count(total_items_purchased) = 0:
+      name: total_items_purchased is complete
+
+  - missing_count(first_purchase_date) = 0:
+      name: first_purchase_date is complete
+
+  - missing_count(last_purchase_date) = 0:
+      name: last_purchase_date is complete
+
+  - invalid_count(total_orders):
+      name: total_orders must be positive
+      valid min: 1
+      fail: when > 0
+
+  - invalid_count(lifetime_value):
+      name: lifetime_value must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - invalid_count(average_order_value):
+      name: average_order_value must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - invalid_count(total_items_purchased):
+      name: total_items_purchased must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - freshness(last_purchase_date):
+      name: Customer purchase history is current
+      warn: when > 7d

@@ -1,0 +1,101 @@
+checks for ${TABLE}:
+
+  - row_count > 0:
+      name: fact_sales contains records
+
+  - schema:
+      fail:
+        when required column missing:
+          [
+            transaction_id,
+            transaction_timestamp,
+            transaction_date,
+            customer_id,
+            product_id,
+            store_id
+          ]
+
+        when wrong column type:
+          transaction_id: bigint
+          transaction_timestamp: timestamp(6)
+          transaction_date: date
+          customer_id: bigint
+          product_id: bigint
+          store_id: bigint
+          quantity: bigint
+          unit_price: double
+          total_amount: double
+
+  - duplicate_count(transaction_id) = 0:
+      name: transaction_id is unique
+
+  - missing_count(transaction_id) = 0:
+      name: transaction_id is complete
+
+  - missing_count(transaction_timestamp) = 0:
+      name: transaction_timestamp is complete
+
+  - missing_count(transaction_date) = 0:
+      name: transaction_date is complete
+
+  - missing_count(customer_id) = 0:
+      name: customer_id is complete
+
+  - missing_count(product_id) = 0:
+      name: product_id is complete
+
+  - missing_count(product_name) = 0:
+      name: product_name is complete
+
+  - missing_count(category) = 0:
+      name: category is complete
+
+  - missing_count(store_id) = 0:
+      name: store_id is complete
+
+  - missing_count(store_name) = 0:
+      name: store_name is complete
+
+  - missing_count(unit_price) = 0:
+      name: Historical product price was resolved
+
+  - missing_count(total_amount) = 0:
+      name: total_amount is complete
+
+  - invalid_count(quantity):
+      name: quantity must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - invalid_count(unit_price):
+      name: unit_price must be positive
+      valid min: 0.01
+      fail: when > 0
+
+  - invalid_count(total_amount):
+      name: total_amount must not be negative
+      valid min: 0
+      fail: when > 0
+
+  - invalid_count(payment_method):
+      name: payment_method is within allowed values
+      valid values:
+        - credit_card
+        - debit_card
+        - cash
+        - digital_wallet
+      warn: when > 0
+      fail: when > 10
+
+  - invalid_count(status):
+      name: status is within allowed values
+      valid values:
+        - completed
+        - pending
+        - cancelled
+      warn: when > 0
+      fail: when > 10
+
+  - freshness(transaction_timestamp):
+      name: fact_sales data is recent
+      warn: when > 1d
