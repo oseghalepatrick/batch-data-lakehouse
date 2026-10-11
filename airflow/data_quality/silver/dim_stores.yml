@@ -5,6 +5,7 @@ checks for ${TABLE}:
       fail:
         when required column missing: 
           [store_id, city]
+      warn:
         when wrong column type:
           store_id: bigint
           city: string
@@ -14,3 +15,9 @@ checks for ${TABLE}:
       name: All stores are unique
   - missing_count(store_id) = 0:
       name: All stores have a key
+  - missing_count(city) = 0:
+      name: All city is not null
+  - missing_count(country) = 0:
+      name: All country is not null
+  - missing_count(region) = 0:
+      name: All region is not null

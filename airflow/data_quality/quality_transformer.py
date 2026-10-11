@@ -22,11 +22,13 @@ logger = get_logger(__name__)
 class SodaQualityTransformer:
     VALID_DATA_LEVELS = {"bronze", "silver", "gold"}
 
-    def __init__(self, columns, values, data_level):
+    def __init__(self, columns, values, data_level, scan_start_ts=None, scan_end_ts=None):
         self.columns = [column.strip('"') for column in columns]
         self.values = values
         self.data_level = data_level.lower().strip()
         self.record = dict(zip(self.columns, self.values))
+        self.scan_start_ts = scan_start_ts
+        self.scan_end_ts = scan_end_ts
 
         self._validate_data_level()
 
@@ -61,26 +63,41 @@ class SodaQualityTransformer:
         return {}
 
     def _generate_scan_id(self):
+        if self.scan_start_ts:
+            ts = str(self.scan_start_ts)
+        else:
+            ts = str(self.record.get("scan_start_ts", ""))
+    
         key = "|".join(
             [
                 self.data_level,
                 str(self.record.get("definition_name", "")),
                 str(self.record.get("table_name", "")),
                 str(self.record.get("data_timestamp", "")),
-                str(self.record.get("scan_start_ts", "")),
+                # str(self.record.get("scan_start_ts", "")),
+                ts
             ]
         )
 
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]
 
     def _get_base_record(self):
+
+        if self.scan_start_ts:
+            start_ts = str(self.scan_start_ts)
+            end_ts = str(self.scan_end_ts)
+        else:
+            start_ts = str(self.record.get("scan_start_ts", ""))
+            end_ts = str(self.record.get("scan_end_ts", ""))
         return {
             "scan_id": self.scan_id,
             "data_level": self.data_level,
             "definition_name": self.record.get("definition_name"),
             "data_timestamp": self.record.get("data_timestamp"),
-            "scan_start_ts": self.record.get("scan_start_ts"),
-            "scan_end_ts": self.record.get("scan_end_ts"),
+            # "scan_start_ts": self.record.get("scan_start_ts"),
+            # "scan_end_ts": self.record.get("scan_end_ts"),
+            "scan_start_ts": start_ts,
+            "scan_end_ts": end_ts,
             "has_errors": self.record.get("has_errors"),
             "has_warnings": self.record.get("has_warnings"),
             "has_failures": self.record.get("has_failures"),

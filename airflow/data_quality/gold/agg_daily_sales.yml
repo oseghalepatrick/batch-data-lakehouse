@@ -12,6 +12,7 @@ checks for ${TABLE}:
             store_name,
             city,
             country,
+            region,
             product_name,
             category
           ]
@@ -22,6 +23,7 @@ checks for ${TABLE}:
           store_name: varchar
           city: varchar
           country: varchar
+          region: varchar
           product_name: varchar
           category: varchar
           total_transactions: bigint
@@ -30,7 +32,7 @@ checks for ${TABLE}:
           total_revenue: double
           average_order_value: double
 
-  - duplicate_count(sales_date, sales_status, store_name, city, country, product_name, category) = 0:
+  - duplicate_count(sales_date, sales_status, store_name, city, country, product_name, category, payment_method) = 0:
       name: Daily sales aggregation grain is unique
 
   - missing_count(sales_date) = 0:
@@ -69,6 +71,15 @@ checks for ${TABLE}:
         - completed
         - pending
         - cancelled
+      fail: when > 0
+
+  - invalid_count(payment_method):
+      name: payment_method is within allowed values
+      valid values:
+        - credit_card
+        - debit_card
+        - cash_transfer
+        - digital_wallet
       fail: when > 0
 
   - invalid_count(total_transactions):

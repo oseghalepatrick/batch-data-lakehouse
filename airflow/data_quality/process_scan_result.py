@@ -10,7 +10,6 @@ from typing import Any, ClassVar
 class SodaDQProcessor:
     """
     Persist Soda scan results into Redshift (analysts_inputs.dq_scan_pivot_runs).
-
     - Fixed metric SUPER columns:
         duplicate_count, missing_count, missing_percent,
         invalid_count, invalid_percent, min, max, avg,
@@ -23,7 +22,6 @@ class SodaDQProcessor:
         * If 'when wrong column type' lists columns → include ONLY those,
           pass/fail with expected/actual.
         * Else include ALL columns from the schema metric as 'pass'.
-
     No 'payload' column is used.
     """
 
@@ -40,7 +38,6 @@ class SodaDQProcessor:
         "freshness",
         "schema",
     )
-
     # Mapping for meta fields -> SQL columns
     META_MAP: ClassVar[dict[str, int]] = {
         "definitionName": "definition_name",
@@ -53,7 +50,6 @@ class SodaDQProcessor:
         "tableName": "table_name",
         "row_count": "row_count",
     }
-
     TABLE_SCOPE_KEY = "__table__"
     ID_COL_RE = re.compile(r"(?:^id$|_id$)", re.IGNORECASE)
     _AS_SPLITTER = re.compile(r"\s+AS\s+", re.IGNORECASE)
@@ -68,21 +64,17 @@ class SodaDQProcessor:
         cols, values = self._insert_pivot_row(
             pivot=pivot, extra_metric_names=extra_metrics
         )
-
         return cols, values
 
     # -----------------------------
     # Pivot builder
     # -----------------------------
-
     @classmethod
     def build_scan_pivot_dynamic(cls, scan: dict | str) -> dict[str, Any]:
         """Accept dict or JSON string of Soda scan results; return pivot dict."""
         if isinstance(scan, (str, bytes)):
             scan = json.loads(scan)
-
         table_name = cls._first_table_from_scan(scan)
-
         out: dict[str, Any] = {
             "definitionName": scan.get("definitionName"),
             "dataTimestamp": scan.get("dataTimestamp"),
@@ -93,12 +85,10 @@ class SodaDQProcessor:
             "hasFailures": scan.get("hasFailures"),
             "tableName": table_name,
         }
-
         # Index metrics and collect helpers for enrichment
         metrics_by_id: dict[str, dict[str, Any]] = {}
         metric_value_by_type_and_col: dict[tuple[str, str | None], Any] = {}
         schema_metric_actual: dict[str, str] = {}
-
         for m in scan.get("metrics", []):
             mid = m.get("identity")
             if mid:
@@ -111,29 +101,24 @@ class SodaDQProcessor:
                 else None
             )
             metric_value_by_type_and_col[(metric_name, col)] = val
-
             if metric_name == "row_count":
                 out["row_count"] = val
-
             if metric_name == "schema":
                 for entry in val or []:
                     c = entry.get("columnName")
                     t = entry.get("sourceDataType")
                     if c:
                         schema_metric_actual[c] = t
-
         buckets: dict[str, dict[str, Any]] = defaultdict(dict)
-
         # Schema expectations & mismatches
         schema_expected: dict[str, str] = {}
         schema_mismatches: dict[str, dict[str, str]] = {}
-
+        schema_check_outcome = "pass"
         for chk in scan.get("checks", []):
             outcome = chk.get("outcome")
             definition = chk.get("definition") or ""
             diag = chk.get("diagnostics") or {}
             col_from_check = chk.get("column")
-
             # Freshness checks: put in 'freshness' bucket
             if "freshness(" in definition.lower():
                 m = re.search(r"freshness\(\s*([^)]+)\s*\)", definition, re.IGNORECASE)
@@ -151,9 +136,9 @@ class SodaDQProcessor:
                     "threshold": cls._freshness_threshold(definition),
                 }
                 continue
-
             # Schema check: capture the expectation list and mismatches
             if (chk.get("name") or "").lower().startswith("schema"):
+                schema_check_outcome = outcome or "pass"
                 schema_expected.update(cls._parse_schema_expected_types(definition))
                 mism = diag.get("column_type_mismatches") or {}
                 for c, d in mism.items():
@@ -162,7 +147,6 @@ class SodaDQProcessor:
                         "actual_type": d.get("actual_type"),
                     }
                 continue
-
             # Generic metrics referenced by this check
             for mid in chk.get("metrics", []):
                 m = metrics_by_id.get(mid)
@@ -172,12 +156,10 @@ class SodaDQProcessor:
                     "metricName"
                 )  # may include spaces, e.g., "failed rows"
                 mval = m.get("value")
-
                 # Extract or infer target column
                 col = col_from_check or cls._metric_column_from_identity(
                     mid, table_name, check_type
                 )
-
                 # Special handling for custom "failed rows": infer from SQL / diagnostics
                 if (
                     not col
@@ -187,7 +169,6 @@ class SodaDQProcessor:
                     inferred = cls._infer_column_from_failed_rows_check(chk)
                     if inferred:
                         col = inferred
-
                 if not col:
                     # 'row_count' remains scalar, not a dict
                     if check_type == "row_count":
@@ -195,12 +176,10 @@ class SodaDQProcessor:
                         continue
                     # Table-scoped: store under __table__
                     col = cls.TABLE_SCOPE_KEY
-
                 buckets[check_type][col] = {
                     "status": outcome,
                     "check_value": mval,
                 }
-
         # Enrich percent metrics with their count siblings
         for pct_key, cnt_key in [
             ("missing_percent", "missing_count"),
@@ -211,7 +190,6 @@ class SodaDQProcessor:
                     cnt_val = metric_value_by_type_and_col.get((cnt_key, col))
                     if cnt_val is not None:
                         payload[cnt_key] = cnt_val
-
         # Build the 'schema' bucket
         schema_cols: Iterable[str] = (
             schema_expected.keys() if schema_expected else schema_metric_actual.keys()
@@ -227,7 +205,7 @@ class SodaDQProcessor:
                     mm = schema_mismatches[col]
                     sb[col] = {
                         "check_type": "schema_wrong_column_type",
-                        "status": "fail",
+                        "status": schema_check_outcome,
                         "expected_type": mm.get("expected_type") or exp,
                         "actual_type": mm.get("actual_type")
                         or schema_metric_actual.get(col),
@@ -240,16 +218,13 @@ class SodaDQProcessor:
                     if exp:
                         entry["expected_type"] = exp
                     sb[col] = entry
-
         # Attach all buckets to output
         for check_type, data in buckets.items():
             if data:
                 out[check_type] = data
-
         # Ensure the fixed metric keys exist (even if empty)
         for key in cls.REQUIRED_METRIC_COLUMNS:
             out.setdefault(key, {})
-
         return out
 
     def _ensure_extra_metric_columns(self, conn, metric_names: Iterable[str]) -> None:
@@ -269,23 +244,19 @@ class SodaDQProcessor:
     ) -> None:
         """Insert one row: meta + row_count + fixed metrics + dynamic metrics."""
         q = self._q
-
         col_names: list[str] = []
         placeholders: list[str] = []
         params: list[Any] = []
-
         # Meta columns
         for pkey, sqlcol in self.META_MAP.items():
             col_names.append(q(sqlcol))
             placeholders.append("%s")
             params.append(pivot.get(pkey))
-
         # Fixed metrics
         for mcol in self.REQUIRED_METRIC_COLUMNS:
             col_names.append(q(mcol))
             placeholders.append("JSON_PARSE(%s)")
             params.append(json.dumps(pivot.get(mcol, {})))
-
         # Dynamic metrics (present in pivot)
         fixed = set(self.REQUIRED_METRIC_COLUMNS)
         for name in extra_metric_names:
@@ -294,13 +265,11 @@ class SodaDQProcessor:
             col_names.append(q(name))
             placeholders.append("JSON_PARSE(%s)")
             params.append(json.dumps(pivot.get(name, {})))
-
         return col_names, params
 
     # -----------------------------
     # Helpers
     # -----------------------------
-
     @staticmethod
     def _q(name: str) -> str:
         """Double-quote identifier safely (handles spaces, reserved words)."""
@@ -349,21 +318,17 @@ class SodaDQProcessor:
         p = id_l.find(needle)
         if p == -1:
             return None
-
         tail_orig = metric_identity[p + len(needle) :]  # keep original case
         tail_l = id_l[p + len(needle) :]
-
         # if tail equals the metric name, it's table-scoped
         if tail_l == metric_name.lower():
             return None
-
         # find '-<metricName' in the tail (handles optional suffix)
         idx = tail_l.find(f"-{metric_name.lower()}")
         if idx == -1:
             idx = tail_l.rfind(f"-{metric_name.lower()}")
             if idx == -1:
                 return None
-
         col = tail_orig[:idx]
         return col or None
 
@@ -371,16 +336,13 @@ class SodaDQProcessor:
     def _freshness_threshold(definition: str) -> str | None:
         """
         Extract freshness threshold from SodaCL definition text.
-
         Supported forms:
           - inline:  "freshness(col) < 6h"
           - block:   "warn: when > 6h"  or  "fail: when >= 1d"
-
         Returns:
           "<6h", ">6h", ">=1d", etc., or None if not found.
         """
         text = definition or ""
-
         # 1) Inline comparator after freshness(...)
         m = re.search(
             r"freshness\(\s*[^)]+\s*\)\s*([<>]=?)\s*([^\s:]+)",
@@ -389,20 +351,17 @@ class SodaDQProcessor:
         )
         if m:
             return f"{m.group(1)}{m.group(2)}"
-
         # 2) Block rules: prefer WARN, else FAIL
         m_warn = re.search(
             r"warn\s*:\s*when\s*([<>]=?)\s*([^\s]+)", text, re.IGNORECASE
         )
         if m_warn:
             return f"{m_warn.group(1)}{m_warn.group(2)}"
-
         m_fail = re.search(
             r"fail\s*:\s*when\s*([<>]=?)\s*([^\s]+)", text, re.IGNORECASE
         )
         if m_fail:
             return f"{m_fail.group(1)}{m_fail.group(2)}"
-
         return None
 
     @staticmethod
@@ -440,7 +399,7 @@ class SodaDQProcessor:
         if not definition:
             return None
         m = re.search(
-            rf"{re.escape(key)}\s*:\s*\|\s*(.+?)(?=\n\s*\n|\Z)",
+            rf"{re.escape(key)}\s*:\s*\\|\s*(.+?)(?=\n\s*\n|\Z)",
             definition,
             flags=re.IGNORECASE | re.DOTALL,
         )
@@ -463,18 +422,16 @@ class SodaDQProcessor:
     def _infer_column_from_failed_rows_check(cls, chk: dict) -> str | None:
         """
         Infer a primary column for a 'failed rows' check:
-          1) Parse WHERE clause from 'fail query' SQL (prefer first non-ID col).
-          2) Else take first non-ID from SELECT list.
-          3) Else use diagnostics.failedRowsAnalysis.file.columns first non-ID.
+          1\) Parse WHERE clause from 'fail query' SQL (prefer first non-ID col).
+          2\) Else take first non-ID from SELECT list.
+          3\) Else use diagnostics.failedRowsAnalysis.file.columns first non-ID.
         """
         definition = chk.get("definition") or ""
         diagnostics = chk.get("diagnostics") or {}
-
         sql = cls._extract_yaml_block(definition, "fail query")
         if sql:
             # remove ${TABLE}
-            sql_clean = re.sub(r"\$\{TABLE\}", "", sql, flags=re.IGNORECASE)
-
+            sql_clean = re.sub(r"\\$\\{TABLE\\}", "", sql, flags=re.IGNORECASE)
             # 1) WHERE clause: e.g., loan_amount < 0
             where_match = re.search(
                 r"\bWHERE\b(.+)", sql_clean, flags=re.IGNORECASE | re.DOTALL
@@ -489,7 +446,6 @@ class SodaDQProcessor:
                 for c in where_cols:
                     if not cls.ID_COL_RE.search(c):
                         return c
-
             # 2) SELECT list
             sel_match = re.search(
                 r"\bSELECT\b(.+?)\bFROM\b", sql_clean, flags=re.IGNORECASE | re.DOTALL
@@ -510,7 +466,6 @@ class SodaDQProcessor:
                 for c in sel_cols:
                     if not cls.ID_COL_RE.search(c):
                         return c
-
         # 3) Diagnostics sample columns
         blocks = diagnostics.get("blocks") or []
         for b in blocks:
@@ -521,7 +476,6 @@ class SodaDQProcessor:
                     name = c.get("name")
                     if name and not cls.ID_COL_RE.search(name):
                         return name
-
         return None
 
     @classmethod

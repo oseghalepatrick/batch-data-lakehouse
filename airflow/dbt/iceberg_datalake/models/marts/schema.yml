@@ -102,7 +102,7 @@ models:
                 values:
                   - credit_card
                   - debit_card
-                  - cash
+                  - cash_transfer
                   - digital_wallet
 
       - name: status

@@ -21,13 +21,13 @@ checks for ${TABLE}:
   - missing_count(customer_id) = 0:
       name: All customers have a key
 
-  - values in (customer_id) must exist in customers (customer_id):
+  - values in (customer_id) must exist in dim_customers (customer_id):
       name: All customer_id values exist in customers
 
-  - values in (product_id) must exist in products (product_id):
+  - values in (product_id) must exist in dim_products (product_id):
       name: All product_id values exist in products
 
-  - values in (store_id) must exist in stores (store_id):
+  - values in (store_id) must exist in dim_stores (store_id):
       name: All store_id values exist in stores
 
 
@@ -41,7 +41,7 @@ checks for ${TABLE}:
       valid values:
         - credit_card
         - debit_card
-        - cash
+        - cash_transfer
         - digital_wallet
       warn: when > 0
       fail: when > 10

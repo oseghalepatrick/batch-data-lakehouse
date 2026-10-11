@@ -5,4 +5,4 @@ select product_id,
     effective_start,
     effective_end,
     is_current
-from {{ source('silver', 'products') }}
+from {{ source('silver', 'dim_products') }}

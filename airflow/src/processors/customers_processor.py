@@ -20,7 +20,7 @@ class CustomerProcessor(BaseProcessor):
         logger.info(f"Customer records received: {customers.num_rows}")
 
         self.scd_type2_merge(
-            identifier="silver.customers",
+            identifier="silver.dim_customers",
             source=customers,
             primary_key="customer_id",
             tracked_columns=["city", "email", "phone"],

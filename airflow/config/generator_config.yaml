@@ -11,14 +11,14 @@ data_generation:
   # These values are only used during the first run.
   # Current values are tracked in checkpoint.json.
   initial_dimensions:
-    customers: 600
-    products: 150
-    stores: 30
+    customers: 1000
+    products: 500
+    stores: 100
 
 
   # Hourly transaction generation
   sales:
-    initial_average_records: 300000 
+    initial_average_records: 600000
     daily_average_records: 10000
     variation_percentage: 0.30
 

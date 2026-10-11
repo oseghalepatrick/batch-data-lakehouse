@@ -4,3 +4,4 @@ server.properties
 .idea
 **/__pycache__/
 **/profiles/
+**/test.py

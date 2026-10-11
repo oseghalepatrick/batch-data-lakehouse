@@ -26,6 +26,7 @@ with sales as (
         st.store_name,
         st.city as store_city,
         st.country as store_country,
+        st.region as store_region,
         s.quantity,
         -- historical product price
         p.price as unit_price,

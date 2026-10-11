@@ -31,7 +31,15 @@ def datalake_pipeline():
     def run_quality_check(layer="bronze", table="customers", table_type=None):
         from data_quality.checks import check
 
-        return check(layer, table, table_type)
+
+        print(
+            f"External task arguments: "
+            f"layer={layer}, "
+            f"table={table}, "
+            f"table_type={table_type}, "
+        )
+
+        return check(layer=layer, table=table, table_type=table_type)
 
     @task()
     def produce_data():
@@ -122,22 +130,22 @@ def datalake_pipeline():
         task_id="silver_customers_quality"
     )(
         layer="silver",
-        table="customers",
+        table="dim_customers",
     )
 
     silver_products_dq = run_quality_check.override(task_id="silver_products_quality")(
         layer="silver",
-        table="products",
+        table="dim_products",
     )
 
     silver_stores_dq = run_quality_check.override(task_id="silver_stores_quality")(
         layer="silver",
-        table="stores",
+        table="dim_stores",
     )
 
     silver_sales_dq = run_quality_check.override(task_id="silver_sales_quality")(
         layer="silver",
-        table="sales",
+        table="cleaned_sales",
     )
 
     gold_fact_sales_dq = run_quality_check.override(task_id="gold_fact_sales_quality")(

@@ -37,7 +37,7 @@ class SalesProcessor(BaseProcessor):
         valid_payment_methods = [
             "credit_card",
             "debit_card",
-            "cash",
+            "cash_transfer",
             "digital_wallet",
         ]
 
@@ -89,7 +89,7 @@ class SalesProcessor(BaseProcessor):
         data = pa.Table.from_pandas(data_df, preserve_index=False)
         data = self.normalise_schema(data)
         self.append(
-            identifier="silver.sales",
+            identifier="silver.cleaned_sales",
             arrow_table=data,
             partitions=[
                 {

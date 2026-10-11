@@ -5,14 +5,18 @@ checks for ${TABLE}:
       fail:
         when required column missing: 
           [customer_id, country]
+      warn:
         when wrong column type:
           customer_id: bigint
+          city: varchar
           country: varchar
-          signup_date: varchar
-          effective_start: varchar
+          signup_date: data
+          effective_start: date
   - duplicate_count(customer_id) = 0:
       name: All customers are unique
   - missing_count(customer_id) = 0:
       name: All customers have a key
+  - missing_count(city) = 0:
+      name: All customers be in a city
   - missing_count(segment) = 0:
       name: All customers have a key

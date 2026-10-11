@@ -5,6 +5,7 @@ checks for ${TABLE}:
       fail:
         when required column missing: 
           [transaction_id, customer_id, product_id, store_id]
+      warn:
         when wrong column type:
           transaction_id: bigint
           customer_id: bigint
@@ -26,7 +27,7 @@ checks for ${TABLE}:
       valid values:
         - credit_card
         - debit_card
-        - cash
+        - cash_transfer
         - digital_wallet
       warn: when > 0
       fail: when > 10

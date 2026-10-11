@@ -30,6 +30,11 @@ models:
         data_tests:
           - not_null
 
+      - name: region
+        description: region where the store is located.
+        data_tests:
+          - not_null
+
 
   - name: stg_customers
     description: >
@@ -62,6 +67,9 @@ models:
 
       - name: country
         description: Customer country during the effective period.
+
+      - name: region
+        description: Customer region during the effective period.
 
       - name: segment
         description: Customer segment.
@@ -185,7 +193,7 @@ models:
                 values:
                   - credit_card
                   - debit_card
-                  - cash
+                  - cash_transfer
                   - digital_wallet
 
       - name: status

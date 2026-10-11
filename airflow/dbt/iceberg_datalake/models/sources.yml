@@ -12,7 +12,7 @@ sources:
 
     tables:
 
-      - name: customers
+      - name: dim_customers
         description: >
           Customer SCD Type II dimension containing historical
           versions of customer attributes.
@@ -31,7 +31,7 @@ sources:
             description: Indicates the current customer version.
 
 
-      - name: products
+      - name: dim_products
         description: >
           Product SCD Type II dimension containing historical
           product versions, including price changes.
@@ -50,7 +50,7 @@ sources:
             description: Indicates the current product version.
 
 
-      - name: stores
+      - name: dim_stores
         description: Store master data.
 
         columns:
@@ -67,7 +67,7 @@ sources:
             description: Store country.
 
 
-      - name: sales
+      - name: cleaned_sales
         description: Sales transaction data.
 
         columns:
@@ -94,3 +94,4 @@ sources:
 
           - name: status
             description: Transaction status.
+        

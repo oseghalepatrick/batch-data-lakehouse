@@ -14,7 +14,7 @@ class StoresProcessor(BaseProcessor):
 
         data = self.read_parquet(source_path)
         self.append(
-            identifier="silver.stores",
+            identifier="silver.dim_stores",
             arrow_table=data,
         )
         self.storage.delete_source(source_path)

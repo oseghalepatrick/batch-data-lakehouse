@@ -56,6 +56,12 @@ checks for ${TABLE}:
   - missing_count(store_name) = 0:
       name: store_name is complete
 
+  - missing_count(store_city) = 0:
+      name: store_city is complete
+
+  - missing_count(store_country) = 0:
+      name: store_country is complete
+
   - missing_count(unit_price) = 0:
       name: Historical product price was resolved
 
@@ -82,7 +88,7 @@ checks for ${TABLE}:
       valid values:
         - credit_card
         - debit_card
-        - cash
+        - cash_transfer
         - digital_wallet
       warn: when > 0
       fail: when > 10

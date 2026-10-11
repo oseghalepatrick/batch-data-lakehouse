@@ -31,7 +31,7 @@
 #     NestedField(2, "name", StringType(), required=False),
 # )
 
-# catalog.drop_table("silver.data_quality_results")
+# catalog.drop_table("gold.agg_daily_sales")
 # catalog.drop_table("silver.customers")
 # catalog.drop_table("silver.stores")
 # catalog.drop_table("silver.sales")
@@ -89,93 +89,37 @@ import pycountry
 from faker import Faker
 
 
-import random
-
-import pycountry
-from faker import Faker
-
-
 class LocationGenerator:
 
     def __init__(self):
         self.fake = Faker()
 
         self.regions = {
-            "Africa": [
-                "NG",
-                "GH",
-                "KE",
-                "ZA",
-                "TZ",
-                "EG",
-            ],
-            "Europe": [
-                "GB",
-                "DE",
-                "FR",
-                "IT",
-                "ES",
-                "NL",
-            ],
-            "North America": [
-                "US",
-                "MX",
-            ],
-            "Canada": [
-                "CA",
-            ],
-            "Asia": [
-                "IN",
-                "JP",
-                "SG",
-                "MY",
-                "TH",
-            ],
-            "Australia": [
-                "AU",
-                "NZ",
-            ],
+            "Africa": ["NG", "GH", "KE", "ZA", "TZ", "EG"],
+            "Europe": ["GB", "DE", "FR", "IT", "ES", "NL"],
+            "North America": ["US", "MX", "CA"],
+            "Asia": ["IN", "JP", "SG", "MY", "TH"],
+            "Australia": ["AU", "NZ"],
         }
 
-    def generate(self):
-
-        region = random.choice(
-            list(self.regions.keys())
-        )
-
-        country_code = random.choice(
-            self.regions[region]
-        )
-
-        location = self.fake.local_latlng(
-            country_code=country_code
-        )
+    def generate_location(self):
+        region = random.choice(list(self.regions.keys()))
+        country_code = random.choice(self.regions[region])
+        location = self.fake.local_latlng(country_code=country_code)
 
         # Some countries may not have a location
         # in Faker's land_coords dataset.
         if location is None:
-            return self.generate()
+            return self.generate_location()
 
-        latitude, longitude, city, returned_country_code, timezone = (
-            location
-        )
+        _, _, city, returned_country_code, _ = location
 
-        country = pycountry.countries.get(
-            alpha_2=returned_country_code
-        )
+        country = pycountry.countries.get(alpha_2=returned_country_code)
 
         return {
             "region": region,
             "city": city,
-            "country_code": returned_country_code,
-            "country": (
-                country.name
-                if country
-                else returned_country_code
-            ),
-            "latitude": float(latitude),
-            "longitude": float(longitude),
-            "timezone": timezone,
+            "country": (country.name if country else returned_country_code),
         }
 
 
@@ -183,5 +127,5 @@ if __name__ == "__main__":
 
     generator = LocationGenerator()
 
-    for _ in range(10):
-        print(generator.generate())
+    for _ in range(30):
+        print(generator.generate_location())

@@ -23,7 +23,7 @@ class ProductProcessor(BaseProcessor):
         logger.info(f"Product records received: {products.num_rows}")
 
         self.scd_type2_merge(
-            identifier="silver.products",
+            identifier="silver.dim_products",
             source=products,
             primary_key="product_id",
             tracked_columns=["price"],

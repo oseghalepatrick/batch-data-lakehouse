@@ -5,23 +5,34 @@ checks for ${TABLE}:
       fail:
         when required column missing: 
           [customer_id, country]
+      warn:
         when wrong column type:
           customer_id: bigint
           country: varchar
           signup_date: date
           effective_start: date
           effective_end: date
-  - duplicate_count(customer_id) = 0:
+  - duplicate_count(customer_id, signup_date, effective_start, effective_end, is_current) = 0:
       name: All customers are unique
   - missing_count(customer_id) = 0:
       name: All customers have a key
   - missing_count(city) = 0:
       name: All city is not null
+  - missing_count(country) = 0:
+      name: All country is not null
+  - missing_count(region) = 0:
+      name: All region is not null
   - missing_count(email) = 0:
       name: All email  is not null
   - missing_count(phone) = 0:
       name: All phone  is not null
+  - missing_count(signup_date) = 0:
+      name: All signup_date  is not null
   - missing_count(effective_start) = 0:
       name: All effective_start  is not null
   - missing_count(segment) = 0:
       name: All customers have a key
+  - invalid_count(is_current):
+      name: is_current is within allowed values
+      valid values: [true, false]
+      fail: when > 0

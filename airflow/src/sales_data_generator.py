@@ -62,6 +62,13 @@ class SalesDataGenerator:
         self.initial_average_records = cfg["sales"]["initial_average_records"]
         self.output_path = Path(cfg["paths"]["output"])
         self.checkpoint = CheckpointManager(cfg["checkpoint"]["file"])
+        self.regions = {
+            "Africa": ["NG", "GH", "KE", "ZA", "TZ", "EG"],
+            "Europe": ["GB", "DE", "FR", "IT", "ES", "NL"],
+            "North America": ["US", "MX", "CA"],
+            "Asia": ["IN", "JP", "SG", "MY", "TH"],
+            "Australia": ["AU", "NZ"],
+        }
 
         # Avoid repeatedly reading checkpoint
         self.current_counts = {}
@@ -153,14 +160,24 @@ class SalesDataGenerator:
     # DIMENSION GENERATION
     # ======================================================
 
-    def get_country_name(self, code):
+    def generate_location(self):
+        region = random.choice(list(self.regions.keys()))
+        country_code = random.choice(self.regions[region])
+        location = self.fake.local_latlng(country_code=country_code)
 
-        country = pycountry.countries.get(alpha_2=code)
+        # Some countries may not have a location
+        # in Faker's land_coords dataset.
+        if location is None:
+            return self.generate_location()
 
-        if country:
-            return country.name
+        _, _, city, returned_country_code, _ = location
+        country = pycountry.countries.get(alpha_2=returned_country_code)
 
-        return code
+        return {
+            "region": region,
+            "city": city,
+            "country": (country.name if country else returned_country_code),
+        }
 
     def generate_customer_email(self, customer_name, existing_emails):
         domains = ["gmail.com", "yahoo.com", "ymail.com", "outlook.com", "hotmail.com"]
@@ -193,11 +210,7 @@ class SalesDataGenerator:
             existing_emails.add(email)
             existing_phones.add(phone)
 
-            location = self.fake.local_latlng()
-            customer_location = {
-                "city": location[2],
-                "country": self.get_country_name(location[3]),
-            }
+            customer_location = self.generate_location()
 
             start = self.tm.date() - timedelta(days=90)
             end = self.tm - timedelta(days=30)
@@ -211,6 +224,7 @@ class SalesDataGenerator:
                     "phone": phone,
                     "city": customer_location.get("city"),
                     "country": customer_location.get("country"),
+                    "region": customer_location.get("region"),
                     "signup_date": signup_time.date(),
                     "segment": random.choice(["Premium", "Regular", "New"]),
                     "effective_start": effective_date.date(),
@@ -236,9 +250,13 @@ class SalesDataGenerator:
 
             if initial_load:
                 start = self.tm.date() - timedelta(days=90)
-                end = self.tm - timedelta(days=30)
-                signup_time = self.fake.date_time_between(start_date=start, end_date=end)
-                effective_date = signup_time - timedelta(minutes=random.randint(0, 1440))  # Last 2 month
+                end = self.tm - timedelta(days=50)
+                signup_time = self.fake.date_time_between(
+                    start_date=start, end_date=end
+                )
+                effective_date = signup_time - timedelta(
+                    minutes=random.randint(0, 1440)
+                )  # Last 2 month
             else:
                 effective_date = self.tm - timedelta(
                     hours=random.randint(0, 23),
@@ -263,17 +281,14 @@ class SalesDataGenerator:
 
         for i in range(start_id, start_id + count):
 
-            location = self.fake.local_latlng()
-            store_location = {
-                "city": location[2],
-                "country": self.get_country_name(location[3]),
-            }
+            store_location = self.generate_location()
             stores.append(
                 {
                     "store_id": i,
                     "store_name": self.fake.company(),
                     "city": store_location.get("city"),
                     "country": store_location.get("country"),
+                    "region": store_location.get("region"),
                 }
             )
 
@@ -356,8 +371,10 @@ class SalesDataGenerator:
                 if update_attr == "city":
                     # record["city"] = self.fake.city()
                     location = self.fake.local_latlng()
-                    record["city"] = location[2]
-                    record["country"] = self.get_country_name(location[3])
+                    location = self.generate_location()
+                    record["city"] = location.get("city")
+                    record["country"] = location.get("country")
+                    record["region"] = location.get("region")
                 elif update_attr == "email":
                     customer_name = record["customer_name"]
                     record["email"] = self.generate_customer_email(
@@ -401,11 +418,7 @@ class SalesDataGenerator:
             for i in range(insert_count):
                 customer_name = self.fake.name()
 
-                location = self.fake.local_latlng()
-                customer_location = {
-                    "city": location[2],
-                    "country": self.get_country_name(location[3]),
-                }
+                customer_location = self.generate_location()
 
                 start = self.tm.date() - timedelta(days=30)
                 signup_time = self.fake.date_time_between(
@@ -427,6 +440,7 @@ class SalesDataGenerator:
                         "phone": self.generate_customer_phone(existing_phones),
                         "city": customer_location.get("city"),
                         "country": customer_location.get("country"),
+                        "region": customer_location.get("region"),
                         "signup_date": signup_time.date(),
                         "segment": random.choice(["Premium", "Regular", "New"]),
                         "effective_start": effective_date.date(),
@@ -463,12 +477,9 @@ class SalesDataGenerator:
         for i in range(count):
             quantity = random.randint(1, 10)
             payment_method = random.choice(
-                ["credit_card", "debit_card", "cash", "digital_wallet"]
+                ["credit_card", "debit_card", "cash_transfer", "digital_wallet"]
             )
             transaction_status = random.choice(["completed", "pending", "cancelled"])
-            transaction_status = (
-                "completed" if payment_method == "cash" else transaction_status
-            )
             if initial_load:
                 transaction_time = self.tm - timedelta(
                     days=random.randint(0, 60),
@@ -511,7 +522,7 @@ class SalesDataGenerator:
 
                 elif issue_type == "invalid_product":
                     # Product ID outside valid range
-                    sale["product_id"] = random.randint(9000, 9999)
+                    sale["product_id"] = random.randint(10000, 19999)
 
                 elif issue_type == "future_date":
                     sale["transaction_timestamp"] = self.tm + timedelta(

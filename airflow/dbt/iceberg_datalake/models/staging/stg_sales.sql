@@ -7,4 +7,4 @@ select transaction_id,
     cast(transaction_timestamp as date) as transaction_date,
     payment_method,
     "status"
-from {{ source('silver', 'sales') }}
+from {{ source('silver', 'cleaned_sales') }}

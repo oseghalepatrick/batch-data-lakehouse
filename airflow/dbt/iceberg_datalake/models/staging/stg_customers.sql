@@ -4,9 +4,10 @@ select customer_id,
     phone,
     city,
     country,
+    region,
     segment,
     signup_date,
     effective_start,
     effective_end,
     is_current
-from {{ source('silver', 'customers') }}
+from {{ source('silver', 'dim_customers') }}

@@ -5,10 +5,11 @@ checks for ${TABLE}:
       fail:
         when required column missing: 
           [product_id, product_name, category]
+      warn:
         when wrong column type:
           product_id: bigint
           price: double
-          effective_start: varchar
+          effective_start: date
   - duplicate_count(product_id) = 0:
       name: All product are unique
   - missing_count(product_id) = 0:

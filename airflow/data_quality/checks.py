@@ -1,4 +1,6 @@
 import os
+import random
+from datetime import datetime, timedelta, timezone
 from string import Template
 
 from data_quality.process_scan_result import SodaDQProcessor
@@ -17,7 +19,13 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 logger.info(f"base_dir: {base_dir}")
 
 
-def check(layer="bronze", table="customers", table_type=None, data_source="trino"):
+def check(
+    layer="bronze",
+    table="customers",
+    table_type=None,
+    data_source="trino",
+    scan_result_table="silver.data_quality_results",
+):
     config = get_config()
     cfg = config["data_generation"]
     storage = MinIOStorage(cfg["minio"])
@@ -57,7 +65,7 @@ def check(layer="bronze", table="customers", table_type=None, data_source="trino
         with open(config_file) as f:
             config_file_template = Template(f.read())
             config_yaml_str = config_file_template.safe_substitute({"SCHEMA": layer})
-        
+
         scan.set_verbose()
         scan.add_configuration_yaml_str(config_yaml_str)
 
@@ -71,13 +79,14 @@ def check(layer="bronze", table="customers", table_type=None, data_source="trino
 
     scan.add_sodacl_yaml_str(rendered_yaml_str)
     scan.set_scan_definition_name(layer)
-    scan.execute()
 
+    result = scan.execute()
     scan_results = scan.get_scan_results()
     logger.info(f"Logging scans:\n{scan.get_logs_text()}")
 
     writer = SodaDQProcessor()
     columns, values = writer.save_scan_results(scan_results)
+
     transformer = SodaQualityTransformer(
         columns,
         values,
@@ -95,9 +104,19 @@ def check(layer="bronze", table="customers", table_type=None, data_source="trino
     SodaQualityTransformer.write_to_iceberg(
         df=result_df,
         catalog=catalog,
-        table_identifier="silver.data_quality_results",
+        table_identifier=scan_result_table,
     )
+
+    if result == 2 and layer == "bronze":
+        logger.error("Soda Scan failed")
+    elif result == 2:
+        raise ValueError('Soda Scan failed')
 
 
 if __name__ == "__main__":
-    check(layer="silver", table="sales", table_type="dimension")
+    check(
+        layer="bronze",
+        table="products",
+        table_type="dimension",
+        scan_time="2026-10-05T00:00:00+00:00",
+    )
