@@ -48,7 +48,7 @@ The Streamlit application provides two main views: **Sales Analytics** for busin
 
 The Sales Analytics dashboard queries Gold aggregate tables through Trino and provides interactive filtering, KPI cards, revenue and order analysis, product and store performance, payment analysis, and customer lifetime insights.
 
-![Sales Analytics Dashboard](assets/sales_analytics_dashboard.png)
+![Sales Analytics Dashboard](assets/sales_analytics.png)
 
 ### Data Quality Monitoring
 
