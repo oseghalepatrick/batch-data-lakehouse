@@ -24,11 +24,38 @@ def check(
     table="customers",
     table_type=None,
     data_source="trino",
-    scan_result_table="silver.data_quality_results",
+    scan_time=None,
+    scan_result_table="gold.data_quality_results",
 ):
     config = get_config()
     cfg = config["data_generation"]
     storage = MinIOStorage(cfg["minio"])
+
+    if scan_time:
+        logical_time = datetime.fromisoformat(scan_time.replace("Z", "+00:00"))
+
+        current_time = datetime.now(timezone.utc)
+
+        scan_start_ts = logical_time.replace(
+            hour=current_time.hour,
+            minute=current_time.minute,
+            second=current_time.second,
+            microsecond=current_time.microsecond,
+        )
+    else:
+        scan_start_ts = datetime.now(timezone.utc)
+
+    scan_end_ts = scan_start_ts + timedelta(seconds=random.randint(0, 60))
+
+    logger.info(
+        "Logical scan start: %s",
+        scan_start_ts.isoformat(),
+    )
+
+    logger.info(
+        "Logical scan end: %s",
+        scan_end_ts.isoformat(),
+    )
 
     scan = Scan()
 
@@ -79,19 +106,40 @@ def check(
 
     scan.add_sodacl_yaml_str(rendered_yaml_str)
     scan.set_scan_definition_name(layer)
+    if scan_time:
+        logger.info(f"Using logical scan time: {scan_time}")
 
+        # print
+        # Logical timestamp stored in Soda results
+        scan._data_timestamp = datetime.fromisoformat(scan_time.replace("Z", "+00:00"))
+        scan.add_variables(
+            {
+                "SCAN_TIME": scan_start_ts,
+            }
+        )
     result = scan.execute()
+
     scan_results = scan.get_scan_results()
     logger.info(f"Logging scans:\n{scan.get_logs_text()}")
 
     writer = SodaDQProcessor()
     columns, values = writer.save_scan_results(scan_results)
-
-    transformer = SodaQualityTransformer(
-        columns,
-        values,
-        layer,
-    )
+    if scan_time:
+        scan_ts = scan_start_ts
+        scan_end = scan_end_ts
+        transformer = SodaQualityTransformer(
+            columns,
+            values,
+            layer,
+            scan_ts,
+            scan_end,
+        )
+    else:
+        transformer = SodaQualityTransformer(
+            columns,
+            values,
+            layer,
+        )
 
     result_df = transformer.transform()
     if result_df.empty:
@@ -110,7 +158,7 @@ def check(
     if result == 2 and layer == "bronze":
         logger.error("Soda Scan failed")
     elif result == 2:
-        raise ValueError('Soda Scan failed')
+        raise ValueError("Soda Scan failed")
 
 
 if __name__ == "__main__":

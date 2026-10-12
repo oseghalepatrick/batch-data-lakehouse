@@ -12,7 +12,6 @@ import streamlit as st
 
 # ============================================================
 # CONFIGURATION
-
 # ============================================================
 
 TRINO_HOST = os.getenv("TRINO_HOST", "trino")
@@ -25,9 +24,7 @@ TRINO_PASSWORD = os.getenv("TRINO_PASSWORD")
 
 TRINO_CATALOG = os.getenv("TRINO_CATALOG", "iceberg")
 
-# TRINO_SCHEMA = os.getenv("TRINO_SCHEMA", "silver")
-
-TRINO_SCHEMA = "silver"
+TRINO_SCHEMA = os.getenv("TRINO_SCHEMA", "gold")
 
 TRINO_DQ_TABLE = os.getenv(
     "TRINO_DQ_TABLE",

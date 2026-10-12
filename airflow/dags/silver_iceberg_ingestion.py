@@ -28,7 +28,7 @@ def datalake_pipeline():
         expect_airflow=False,
         expect_pendulum=False,
     )
-    def run_quality_check(layer="bronze", table="customers", table_type=None):
+    def run_quality_check(layer="bronze", table="customers", table_type=None, scan_time=None):
         from data_quality.checks import check
 
 
@@ -37,9 +37,10 @@ def datalake_pipeline():
             f"layer={layer}, "
             f"table={table}, "
             f"table_type={table_type}, "
+            f"scan_time={scan_time}"
         )
 
-        return check(layer=layer, table=table, table_type=table_type)
+        return check(layer=layer, table=table, table_type=table_type, scan_time=scan_time)
 
     @task()
     def produce_data():
@@ -107,23 +108,27 @@ def datalake_pipeline():
         layer="bronze",
         table="customers",
         table_type="dimension",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     bronze_products_dq = run_quality_check.override(task_id="bronze_products_quality")(
         layer="bronze",
         table="products",
         table_type="dimension",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     bronze_stores_dq = run_quality_check.override(task_id="bronze_stores_quality")(
         layer="bronze",
         table="stores",
         table_type="dimension",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     bronze_sales_dq = run_quality_check.override(task_id="bronze_sales_quality")(
         layer="bronze",
         table="sales",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     silver_customers_dq = run_quality_check.override(
@@ -131,26 +136,31 @@ def datalake_pipeline():
     )(
         layer="silver",
         table="dim_customers",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     silver_products_dq = run_quality_check.override(task_id="silver_products_quality")(
         layer="silver",
         table="dim_products",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     silver_stores_dq = run_quality_check.override(task_id="silver_stores_quality")(
         layer="silver",
         table="dim_stores",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     silver_sales_dq = run_quality_check.override(task_id="silver_sales_quality")(
         layer="silver",
         table="cleaned_sales",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     gold_fact_sales_dq = run_quality_check.override(task_id="gold_fact_sales_quality")(
         layer="gold",
         table="fact_sales",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     gold_product_perf_dq = run_quality_check.override(
@@ -158,6 +168,7 @@ def datalake_pipeline():
     )(
         layer="gold",
         table="agg_product_performance",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     gold_daily_sales_dq = run_quality_check.override(
@@ -165,6 +176,7 @@ def datalake_pipeline():
     )(
         layer="gold",
         table="agg_daily_sales",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     gold_customer_ltv_dq = run_quality_check.override(
@@ -172,6 +184,7 @@ def datalake_pipeline():
     )(
         layer="gold",
         table="agg_customer_lifetime_value",
+        scan_time="{{ data_interval_end.isoformat() }}",
     )
 
     chain(
