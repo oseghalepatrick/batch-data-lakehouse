@@ -40,6 +40,14 @@ The architecture below shows how Python-generated source files move through the 
 
 ![OpenLakehouse Architecture](assets/arch.png)
 
+## Airflow DAG
+
+The Airflow DAG orchestrates the complete batch pipeline from source-data generation through Bronze, Silver, and Gold processing, with data quality validation at each stage.
+
+![Airflow DAG Graph](assets/datalake_pipeline_graph.png)
+
+Airflow schedules and coordinates each task so that downstream processing only proceeds after the preceding stage completes successfully.
+
 ## Visualisation
 
 The Streamlit application provides two main views: **Sales Analytics** for business-facing analysis and **Data Quality Monitoring** for operational data-quality observability.
