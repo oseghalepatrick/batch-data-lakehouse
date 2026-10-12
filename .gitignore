@@ -5,3 +5,4 @@ server.properties
 **/__pycache__/
 **/profiles/
 **/test.py
+.DS_Store
