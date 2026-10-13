@@ -308,15 +308,27 @@ s3://warehouse/
 
 ### Trino
 
-Connect to:
+Trino is exposed on:
 
 <http://localhost:8089>
 
-Validate the catalog:
+Open the Trino CLI inside the running Trino container:
+
+```bash
+docker exec -it trino trino --server http://localhost:8089
+```
+
+Validate the connection and Iceberg catalog:
 
 ```sql
 SHOW CATALOGS;
 SHOW SCHEMAS FROM iceberg;
+```
+
+Exit the Trino CLI with:
+
+```text
+quit
 ```
 
 ### Streamlit
@@ -429,15 +441,30 @@ The `profiles` directory is intentionally excluded through `.gitignore` because 
 
 Because `DBT_PROFILES_DIR` and `DBT_PROJECT_DIR` are already configured in the Airflow image, dbt commands can be run without passing `--profiles-dir` or `--project-dir` explicitly.
 
-Typical validation commands:
+To test dbt and Soda from the same runtime used by the pipeline, enter the Airflow worker container:
+
+```bash
+docker exec -it open-datalake-project-airflow-worker-1 bash
+```
+
+Validate the dbt connection and project configuration:
 
 ```bash
 dbt debug
+```
+
+Run the dbt models and tests when required:
+
+```bash
 dbt run
+
 dbt test
+
+dbt build
 ```
 
 In normal operation, dbt is executed through Airflow and transforms Silver Iceberg tables into Gold analytics models.
+
 
 ## 12. Data Quality
 
@@ -474,6 +501,22 @@ iceberg.gold.data_quality_results
 ```
 
 The persisted results are queried by the Streamlit Data Quality Monitoring dashboard.
+
+From inside the Airflow worker container, validate the Soda connection to Trino:
+
+```bash
+SCHEMA=silver /opt/airflow/soda_venv/bin/soda test-connection \
+  -d trino \
+  -c /opt/airflow/data_quality/configuration.yml
+```
+
+To validate the Gold schema instead:
+
+```bash
+SCHEMA=gold /opt/airflow/soda_venv/bin/soda test-connection \
+  -d trino \
+  -c /opt/airflow/data_quality/configuration.yml
+```
 
 ## 13. Validate the Data
 
