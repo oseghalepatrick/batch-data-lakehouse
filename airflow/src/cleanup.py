@@ -1,28 +1,17 @@
 import os
 
 import boto3
-from pyiceberg.catalog import load_catalog
 
-catalog = load_catalog(
-    "nessie",
-    **{
-        "type": "rest",
-        "uri": "http://nessie:19120/iceberg/main/",
-        "warehouse": "warehouse",
-        "s3.endpoint": "http://minio:9000",
-        "s3.access-key-id": "admin",
-        "s3.secret-access-key": "password123",
-        "s3.region": "us-east-1",
-    },
-)
+from src.utils.config import get_catalog_config, get_config
 
+catalog = get_catalog_config()
 # MinIO configuration
+config = get_config()
 s3 = boto3.client(
     "s3",
-    endpoint_url="http://minio:9000",
-    aws_access_key_id="admin",
-    aws_secret_access_key="password123",
-    region_name="us-east-1",
+    endpoint_url=config["endpoint"],
+    aws_access_key_id=config["access_key"],
+    aws_secret_access_key=config["secret_key"],
 )
 
 bucket_name = "warehouse"
@@ -107,8 +96,6 @@ for namespace in namespaces:
 
 delete_s3_prefix(bucket_name, "bronze/")
 
-delete_local_file(
-    "/opt/airflow/checkpoint/generator_checkpoint.json"
-)
+delete_local_file("/opt/airflow/checkpoint/generator_checkpoint.json")
 
 print("\nCleanup completed")

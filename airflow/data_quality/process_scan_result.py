@@ -9,20 +9,10 @@ from typing import Any, ClassVar
 
 class SodaDQProcessor:
     """
-    Persist Soda scan results into Redshift (analysts_inputs.dq_scan_pivot_runs).
-    - Fixed metric SUPER columns:
-        duplicate_count, missing_count, missing_percent,
-        invalid_count, invalid_percent, min, max, avg,
-        freshness, schema
-    - Dynamic SUPER columns for any new metricName (e.g., "failed rows"),
-      created on the fly.
-    - Table-scoped metrics stored under key "__table__" unless a target
-      column is inferred (e.g., from failed-rows SQL).
-    - Schema bucket:
-        * If 'when wrong column type' lists columns → include ONLY those,
-          pass/fail with expected/actual.
-        * Else include ALL columns from the schema metric as 'pass'.
-    No 'payload' column is used.
+    Convert raw Soda scan results into a structured pivot.
+    The processor extracts scan metadata, standard and dynamic metrics,
+    schema diagnostics, freshness results, and table-scoped checks for
+    downstream transformation and persistence.
     """
 
     # Fixed baseline metric columns
@@ -55,10 +45,7 @@ class SodaDQProcessor:
     _AS_SPLITTER = re.compile(r"\s+AS\s+", re.IGNORECASE)
 
     def save_scan_results(self, scan_results: dict | str) -> dict[str, Any]:
-        """
-        Build the pivot, ensure the table/columns, and insert one row.
-        Returns the pivot dict.
-        """
+        """Convert Soda scan output into aligned column and value collections."""
         pivot = self.build_scan_pivot_dynamic(scan_results)
         extra_metrics = self._extra_metric_names_in_pivot(pivot)
         cols, values = self._insert_pivot_row(
@@ -66,12 +53,11 @@ class SodaDQProcessor:
         )
         return cols, values
 
-    # -----------------------------
     # Pivot builder
-    # -----------------------------
     @classmethod
     def build_scan_pivot_dynamic(cls, scan: dict | str) -> dict[str, Any]:
-        """Accept dict or JSON string of Soda scan results; return pivot dict."""
+        """Build a metric pivot from a Soda scan dictionary or JSON string."""
+        # Soda results may be supplied as a dictionary or serialized JSON.
         if isinstance(scan, (str, bytes)):
             scan = json.loads(scan)
         table_name = cls._first_table_from_scan(scan)
@@ -86,6 +72,7 @@ class SodaDQProcessor:
             "tableName": table_name,
         }
         # Index metrics and collect helpers for enrichment
+        # Index metrics once so checks can resolve metric IDs efficiently.
         metrics_by_id: dict[str, dict[str, Any]] = {}
         metric_value_by_type_and_col: dict[tuple[str, str | None], Any] = {}
         schema_metric_actual: dict[str, str] = {}
@@ -111,6 +98,7 @@ class SodaDQProcessor:
                         schema_metric_actual[c] = t
         buckets: dict[str, dict[str, Any]] = defaultdict(dict)
         # Schema expectations & mismatches
+        # Track expected and actual schema types for schema diagnostics.
         schema_expected: dict[str, str] = {}
         schema_mismatches: dict[str, dict[str, str]] = {}
         schema_check_outcome = "pass"
@@ -121,7 +109,9 @@ class SodaDQProcessor:
             col_from_check = chk.get("column")
             # Freshness checks: put in 'freshness' bucket
             if "freshness(" in definition.lower():
-                m = re.search(r"freshness\(\s*([^)]+)\s*\)", definition, re.IGNORECASE)
+                m = re.search(
+                    r"freshness\\(\s*([^)]+)\s*\\)", definition, re.IGNORECASE
+                )
                 mcol = (
                     (m.group(1).strip() if m else None)
                     or col_from_check
@@ -181,6 +171,7 @@ class SodaDQProcessor:
                     "check_value": mval,
                 }
         # Enrich percent metrics with their count siblings
+        # Attach count metrics to percentage checks for richer downstream results.
         for pct_key, cnt_key in [
             ("missing_percent", "missing_count"),
             ("invalid_percent", "invalid_count"),
@@ -191,6 +182,7 @@ class SodaDQProcessor:
                     if cnt_val is not None:
                         payload[cnt_key] = cnt_val
         # Build the 'schema' bucket
+        # Prefer configured schema columns; otherwise use the observed schema.
         schema_cols: Iterable[str] = (
             schema_expected.keys() if schema_expected else schema_metric_actual.keys()
         )
@@ -223,26 +215,15 @@ class SodaDQProcessor:
             if data:
                 out[check_type] = data
         # Ensure the fixed metric keys exist (even if empty)
+        # Keep a stable pivot shape even when a metric is absent from the scan.
         for key in cls.REQUIRED_METRIC_COLUMNS:
             out.setdefault(key, {})
         return out
 
-    def _ensure_extra_metric_columns(self, conn, metric_names: Iterable[str]) -> None:
-        """Add dynamic metricName columns (SUPER) as needed (e.g., 'failed rows')."""
-        existing = self._existing_columns(conn, self.schema, self.table)
-        q = self._q
-        for name in metric_names:
-            if name.lower() in existing:
-                continue
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"ALTER TABLE {q(self.schema)}.{q(self.table)} ADD COLUMN {q(name)} SUPER;"
-                )
-
     def _insert_pivot_row(
         self, pivot: dict[str, Any], extra_metric_names: Iterable[str]
     ) -> None:
-        """Insert one row: meta + row_count + fixed metrics + dynamic metrics."""
+        """Build ordered column names and values for one transformed scan record."""
         q = self._q
         col_names: list[str] = []
         placeholders: list[str] = []
@@ -272,22 +253,12 @@ class SodaDQProcessor:
     # -----------------------------
     @staticmethod
     def _q(name: str) -> str:
-        """Double-quote identifier safely (handles spaces, reserved words)."""
+        """Safely quote an SQL identifier."""
         return '"' + name.replace('"', '""') + '"'
 
     @staticmethod
-    def _existing_columns(conn, schema: str, table: str) -> set[str]:
-        sql = """
-          SELECT lower(column_name)
-          FROM information_schema.columns
-          WHERE lower(table_schema) = %s AND lower(table_name) = %s
-        """
-        with conn.cursor() as cur:
-            cur.execute(sql, (schema.lower(), table.lower()))
-            return {r[0] for r in cur.fetchall()}
-
-    @staticmethod
     def _first_table_from_scan(scan: dict) -> str | None:
+        """Return the first table name found in Soda checks or metrics."""
         # Prefer checks (they carry 'table')
         for chk in scan.get("checks", []):
             if chk.get("table"):
@@ -307,7 +278,7 @@ class SodaDQProcessor:
     ) -> str | None:
         """
         Parse Soda metric identity:
-          metric-<def>-<ds>-<table>-<column>-<metricName>[...]
+          metric-\<def>-\<ds>-\<table>-\<column>-\<metricName>[...]
         Return None for table-scoped metrics (no column segment).
         """
         if not metric_identity or not table_name or not metric_name:
@@ -323,7 +294,7 @@ class SodaDQProcessor:
         # if tail equals the metric name, it's table-scoped
         if tail_l == metric_name.lower():
             return None
-        # find '-<metricName' in the tail (handles optional suffix)
+        # find '-\<metricName' in the tail (handles optional suffix)
         idx = tail_l.find(f"-{metric_name.lower()}")
         if idx == -1:
             idx = tail_l.rfind(f"-{metric_name.lower()}")
@@ -345,7 +316,7 @@ class SodaDQProcessor:
         text = definition or ""
         # 1) Inline comparator after freshness(...)
         m = re.search(
-            r"freshness\(\s*[^)]+\s*\)\s*([<>]=?)\s*([^\s:]+)",
+            r"freshness\\(\s*[^)]+\s*\\)\s*([<>]=?)\s*([^\s:]+)",
             text,
             flags=re.IGNORECASE,
         )
@@ -399,7 +370,7 @@ class SodaDQProcessor:
         if not definition:
             return None
         m = re.search(
-            rf"{re.escape(key)}\s*:\s*\\|\s*(.+?)(?=\n\s*\n|\Z)",
+            rf"{re.escape(key)}\s*:\s*\\\\|\s*(.+?)(?=\n\s*\n|\Z)",
             definition,
             flags=re.IGNORECASE | re.DOTALL,
         )
@@ -422,16 +393,16 @@ class SodaDQProcessor:
     def _infer_column_from_failed_rows_check(cls, chk: dict) -> str | None:
         """
         Infer a primary column for a 'failed rows' check:
-          1\) Parse WHERE clause from 'fail query' SQL (prefer first non-ID col).
-          2\) Else take first non-ID from SELECT list.
-          3\) Else use diagnostics.failedRowsAnalysis.file.columns first non-ID.
+          1\\) Parse WHERE clause from 'fail query' SQL (prefer first non-ID col).
+          2\\) Else take first non-ID from SELECT list.
+          3\\) Else use diagnostics.failedRowsAnalysis.file.columns first non-ID.
         """
         definition = chk.get("definition") or ""
         diagnostics = chk.get("diagnostics") or {}
         sql = cls._extract_yaml_block(definition, "fail query")
         if sql:
             # remove ${TABLE}
-            sql_clean = re.sub(r"\\$\\{TABLE\\}", "", sql, flags=re.IGNORECASE)
+            sql_clean = re.sub(r"\\\\$\\\\{TABLE\\\\}", "", sql, flags=re.IGNORECASE)
             # 1) WHERE clause: e.g., loan_amount < 0
             where_match = re.search(
                 r"\bWHERE\b(.+)", sql_clean, flags=re.IGNORECASE | re.DOTALL
@@ -480,7 +451,7 @@ class SodaDQProcessor:
 
     @classmethod
     def _extra_metric_names_in_pivot(cls, pivot: dict[str, Any]) -> list[str]:
-        """Names of metric buckets (dicts) not in the fixed set, to add as columns."""
+        """Return metric bucket names that are not part of the fixed metric set."""
         fixed = set(cls.REQUIRED_METRIC_COLUMNS)
         names = []
         for k, v in pivot.items():

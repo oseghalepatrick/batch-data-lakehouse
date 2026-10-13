@@ -129,7 +129,12 @@ The implementation follows a medallion-style lakehouse architecture:
 │   ├── config/
 │   ├── plugins/
 │   ├── src/
+│   │   ├── processors/
+│   │   └── utils/
 │   ├── dbt/
+│   │   ├── iceberg_datalake/
+│   │   └── profiles/
+│   │       └── profiles.yml
 │   └── data_quality/
 ├── initdb/
 ├── streamlit/
@@ -140,6 +145,7 @@ The implementation follows a medallion-style lakehouse architecture:
 ├── trino/
 │   ├── catalog/
 │   └── coordinator/
+├── assets/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env
@@ -149,23 +155,30 @@ The implementation follows a medallion-style lakehouse architecture:
 ## 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
-cd <repository-directory>
+git clone https://github.com/oseghalepatrick/batch-data-lakehouse.git
+cd batch-data-lakehouse
 ```
+
+The repository contains the Docker Compose configuration, Airflow DAGs, PyIceberg processors, dbt project, Soda checks, Trino configuration, and Streamlit application required to reproduce the platform locally.
 
 ## 2. Create the Environment File
 
-Create a `.env` file in the project root.
+Rename the provided example environment file to `.env`:
 
-On Linux:
+```bash
+cp .env.example .env
+```
+
+On Linux, add your Airflow user ID:
 
 ```bash
 echo "AIRFLOW_UID=$(id -u)" >> .env
 ```
 
-Add any other environment variables required by the project.
+Update `.env` with the credentials and environment-specific values required by your local Docker configuration.
 
-> Do not commit real credentials to source control.
+> Do not commit `.env`, real credentials, or secrets to source control. Keep `.env.example` in the repository as the replication template.
+
 
 ## 3. Verify the Required Project Directories
 
@@ -177,7 +190,8 @@ mkdir -p airflow/logs
 mkdir -p airflow/config
 mkdir -p airflow/plugins
 mkdir -p airflow/src
-mkdir -p airflow/dbt
+mkdir -p airflow/dbt/iceberg_datalake
+mkdir -p airflow/dbt/profiles
 mkdir -p airflow/data_quality
 mkdir -p trino/catalog
 mkdir -p trino/coordinator
@@ -215,7 +229,26 @@ initdb/
 
 These scripts are mounted into PostgreSQL during initialisation.
 
-## 6. Start the Stack
+## 6. Build and Start the Stack
+
+The project uses a custom Airflow image based on:
+
+```dockerfile
+FROM apache/airflow:3.3.2
+```
+
+The image installs the main Airflow dependencies, creates an isolated Soda Python 3.11.8 environment, and exposes the dbt paths used by the project.
+
+Key runtime paths:
+
+```text
+PYTHONPATH=/opt/airflow
+DBT_PROFILES_DIR=/opt/airflow/dbt/profiles
+DBT_PROJECT_DIR=/opt/airflow/dbt/iceberg_datalake
+Soda Python=/opt/airflow/soda_venv/bin/python
+```
+
+Build and start all services:
 
 ```bash
 docker compose up -d --build
@@ -353,11 +386,48 @@ Silver tables should be:
 
 ## 11. dbt Gold Layer
 
-Store the dbt project under:
+The dbt project is stored under:
 
 ```text
-airflow/dbt/
+airflow/dbt/iceberg_datalake/
 ```
+
+The Airflow Docker image already exposes the dbt project and profile locations:
+
+```dockerfile
+ENV DBT_PROFILES_DIR=/opt/airflow/dbt/profiles
+ENV DBT_PROJECT_DIR=/opt/airflow/dbt/iceberg_datalake
+```
+
+Create the local profile file at:
+
+```text
+airflow/dbt/profiles/profiles.yml
+```
+
+Example profile:
+
+```yaml
+iceberg_datalake:
+  outputs:
+    dev:
+      type: trino
+      method: none
+      user: airflow
+      host: trino
+      port: 8089
+      catalog: iceberg
+      schema: silver
+      threads: 1
+
+  target: dev
+```
+
+The `profiles` directory is intentionally excluded through `.gitignore` because it may contain environment-specific connection settings or credentials.
+
+> Do not commit `profiles.yml` or sensitive credentials to the repository.
+
+Because `DBT_PROFILES_DIR` and `DBT_PROJECT_DIR` are already configured in the Airflow image, dbt commands can be run without passing `--profiles-dir` or `--project-dir` explicitly.
 
 Typical validation commands:
 
@@ -367,23 +437,43 @@ dbt run
 dbt test
 ```
 
-In normal operation, dbt is executed through Airflow and transforms Silver datasets into Gold models.
+In normal operation, dbt is executed through Airflow and transforms Silver Iceberg tables into Gold analytics models.
 
 ## 12. Data Quality
 
-Store Soda configuration and checks under:
+Soda configuration, SodaCL checks, scan processing, and result transformation are stored under:
 
 ```text
 airflow/data_quality/
 ```
 
-Run checks against Bronze, Silver, and Gold datasets.
-
-Persist transformed quality results into:
+The Airflow Docker image creates an isolated Python 3.11.8 environment for Soda:
 
 ```text
-iceberg.silver.data_quality_results
+/opt/airflow/soda_venv
 ```
+
+Soda dependencies are installed from:
+
+```text
+airflow/soda_requirements.txt
+```
+
+This isolates Soda and its Dask dependencies from the main Airflow Python environment.
+
+Data quality checks run against:
+
+- Bronze Parquet files in MinIO;
+- Silver Iceberg tables through Trino;
+- Gold Iceberg tables through Trino.
+
+Processed quality results are persisted into:
+
+```text
+iceberg.gold.data_quality_results
+```
+
+The persisted results are queried by the Streamlit Data Quality Monitoring dashboard.
 
 ## 13. Validate the Data
 
@@ -406,7 +496,7 @@ Check persisted data-quality results:
 
 ```sql
 SELECT *
-FROM iceberg.silver.data_quality_results
+FROM iceberg.gold.data_quality_results
 ORDER BY scan_start_ts DESC
 LIMIT 100;
 ```
@@ -433,10 +523,27 @@ Open:
 Confirm that:
 
 - Sales Analytics queries Gold tables through Trino.
-- Data Quality Monitoring queries `silver.data_quality_results`.
+- Data Quality Monitoring queries `gold.data_quality_results`.
 - dashboard filters work correctly.
 - failures and warnings appear in Quality Diagnostics.
 - visualisations load successfully.
+
+## Replication Checklist
+
+Before triggering the pipeline, confirm that:
+
+- Docker and Docker Compose are installed;
+- required project directories exist;
+- `.env` has been created;
+- `airflow/dbt/profiles/profiles.yml` has been created locally;
+- the dbt profile points to `host: trino` and `port: 8089`;
+- Trino can access the `iceberg` catalog;
+- Nessie is reachable;
+- the MinIO `warehouse` bucket exists;
+- Airflow services are healthy;
+- the Streamlit application can reach Trino.
+
+Once these checks pass, trigger the Airflow DAG and validate the Bronze, Silver, Gold, data quality, and dashboard outputs.
 
 ## Useful Commands
 

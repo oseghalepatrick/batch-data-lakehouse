@@ -1371,10 +1371,8 @@ else:
     )
     if "customer_lifetime_page" not in st.session_state:
         st.session_state.customer_lifetime_page = 1
-    if st.session_state.customer_lifetime_page > total_pages:
-        st.session_state.customer_lifetime_page = total_pages
-    if st.session_state.customer_lifetime_page < 1:
-        st.session_state.customer_lifetime_page = 1
+    st.session_state.customer_lifetime_page = min(st.session_state.customer_lifetime_page, total_pages)
+    st.session_state.customer_lifetime_page = max(st.session_state.customer_lifetime_page, 1)
     nav_left, nav_mid, nav_right = st.columns([1, 2, 1])
     with nav_left:
         if st.button(

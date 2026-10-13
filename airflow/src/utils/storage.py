@@ -172,9 +172,5 @@ class MinIOStorage:
             logger.info("Source deleted: %s", file_path)
 
         except ClientError as exc:
-            logger.error(
-                "Failed deleting source: %s - %s",
-                file_path,
-                exc,
-            )
+            logger.error(f"Failed deleting source: {file_path} - {exc}")
             raise

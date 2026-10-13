@@ -1,3 +1,5 @@
+"""Streamlit dashboard for monitoring Soda data quality results through Trino."""
+
 import os
 import socket
 from datetime import timedelta
@@ -10,33 +12,15 @@ from trino.dbapi import connect
 
 import streamlit as st
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
 TRINO_HOST = os.getenv("TRINO_HOST", "trino")
-
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8089"))
-
 TRINO_USER = os.getenv("TRINO_USER", "airflow")
-
 TRINO_PASSWORD = os.getenv("TRINO_PASSWORD")
-
 TRINO_CATALOG = os.getenv("TRINO_CATALOG", "iceberg")
-
 TRINO_SCHEMA = os.getenv("TRINO_SCHEMA", "gold")
-
-TRINO_DQ_TABLE = os.getenv(
-    "TRINO_DQ_TABLE",
-    "data_quality_results",
-)
+TRINO_DQ_TABLE = os.getenv("TRINO_DQ_TABLE", "data_quality_results")
 
 FULL_TABLE_NAME = f"{TRINO_CATALOG}.{TRINO_SCHEMA}.{TRINO_DQ_TABLE}"
-
-# ============================================================
-# QUALITY DIMENSION MAPPING
-
-# ============================================================
 
 QUALITY_DIMENSION_MAP = {
     "missing_count": "Completeness",
@@ -51,11 +35,7 @@ QUALITY_DIMENSION_MAP = {
     "avg": "Distribution",
 }
 
-# ============================================================
 # PAGE STYLING
-
-# ============================================================
-
 st.markdown(
     """
     <style>
@@ -172,13 +152,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ============================================================
-# DATABASE CONNECTION
-
-# ============================================================
-
 
 def get_trino_connection():
+    """Create and return a validated Trino connection."""
     try:
         socket.gethostbyname(TRINO_HOST)
     except socket.gaierror as exc:
@@ -196,6 +172,7 @@ def get_trino_connection():
         raise ConnectionError(
             f"Trino is not reachable at " f"{TRINO_HOST}:{TRINO_PORT}."
         ) from exc
+    # Build connection arguments once and add authentication only when configured.
     kwargs = {
         "host": TRINO_HOST,
         "port": TRINO_PORT,
@@ -211,14 +188,9 @@ def get_trino_connection():
     return connect(**kwargs)
 
 
-# ============================================================
-# LOAD DATA
-
-# ============================================================
-
-
 @st.cache_data(ttl=120)
 def load_data():
+    """Load cached data quality results from Trino."""
     query = f"""
         SELECT
             primary_id,
@@ -262,13 +234,8 @@ def load_data():
         connection.close()
 
 
-# ============================================================
-# DATA PREPARATION
-
-# ============================================================
-
-
 def prepare_data(df):
+    """Normalise data types and derive dashboard helper columns."""
     df = df.copy()
     timestamp_columns = [
         "data_timestamp",
@@ -301,6 +268,7 @@ def prepare_data(df):
             df[column] = df[column].fillna("").astype(str)
     df["status"] = df["status"].str.lower().str.strip()
     df["data_level"] = df["data_level"].str.lower().str.strip()
+    # Map Soda metrics to business-friendly quality dimensions.
     df["quality_dimension"] = (
         df["check_type"].map(QUALITY_DIMENSION_MAP).fillna("Other")
     )
@@ -315,12 +283,6 @@ def prepare_data(df):
     return df
 
 
-# ============================================================
-# FILTERING
-
-# ============================================================
-
-
 def apply_filters(
     df,
     data_levels,
@@ -330,6 +292,7 @@ def apply_filters(
     start_date,
     end_date,
 ):
+    """Filter data quality results using the selected dashboard criteria."""
     filtered = df.copy()
     filtered = filtered[
         (filtered["scan_start_ts"].dt.date >= start_date)
@@ -346,19 +309,15 @@ def apply_filters(
     return filtered
 
 
-# ============================================================
-# LATEST SCAN
-
-# ============================================================
-
-
 def get_latest_scan_rows(df):
+    """Return the latest scan rows for each table and data layer."""
     if df.empty:
         return df.copy()
     df = df.copy()
     df = df[df["scan_start_ts"].notna()].copy()
     if df.empty:
         return df
+    # Keep the most recent scan independently for each layer and table.
     latest_scan = df.groupby(
         [
             "data_level",
@@ -371,16 +330,11 @@ def get_latest_scan_rows(df):
     return df[df["scan_start_ts"].eq(latest_scan)].copy()
 
 
-# ============================================================
-# HELPERS
-
-# ============================================================
-
-
 def safe_percentage(
     numerator,
     denominator,
 ):
+    """Calculate a percentage safely when the denominator may be zero."""
     if denominator == 0:
         return 0.0
     return numerator / denominator * 100
@@ -390,6 +344,7 @@ def section_header(
     title,
     description,
 ):
+    """Render a consistent dashboard section heading."""
     st.markdown(
         f"""
         <div class="section-title">
@@ -408,6 +363,7 @@ def style_figure(
     height=380,
     show_legend=True,
 ):
+    """Apply shared Plotly styling and hover behaviour."""
     fig.update_layout(
         template="plotly_white",
         height=height,
@@ -460,13 +416,8 @@ def style_figure(
     return fig
 
 
-# ============================================================
-# KPI CALCULATION
-
-# ============================================================
-
-
 def calculate_dashboard_kpis(df):
+    """Calculate headline data quality KPIs."""
     total_checks = len(df)
     passed = int(df["status"].eq("pass").sum())
     failed = int(df["status"].eq("fail").sum())
@@ -513,18 +464,13 @@ def calculate_dashboard_kpis(df):
     }
 
 
-# ============================================================
-# TOP KPI CARDS
-
-# ============================================================
-
-
 def render_kpi_card(
     label,
     value,
     css_class="kpi-neutral",
     subtext=None,
 ):
+    """Render a styled KPI card."""
     subtext_html = ""
     if subtext:
         subtext_html = f'<div class="kpi-subtext">{subtext}</div>'
@@ -542,6 +488,7 @@ def render_kpi_card(
 
 
 def get_quality_class(score):
+    """Map a quality score to its KPI styling class."""
     if score >= 90:
         return "kpi-good"
     if score >= 75:
@@ -550,6 +497,7 @@ def get_quality_class(score):
 
 
 def render_top_kpis(df):
+    """Render the primary and status KPI rows."""
     metrics = calculate_dashboard_kpis(df)
     latest_scan = (
         metrics["latest_scan"].strftime("%d %b %Y")
@@ -562,9 +510,7 @@ def render_top_kpis(df):
         else None
     )
     quality_class = get_quality_class(metrics["pass_rate"])
-    # ========================================================
     # PRIMARY KPI ROW
-    # ========================================================
     c1, c2, c3, c4, c5 = st.columns([1.35, 1, 1, 1.1, 1])
     with c1:
         render_kpi_card(
@@ -605,9 +551,7 @@ def render_top_kpis(df):
         "<div style='height: 14px'></div>",
         unsafe_allow_html=True,
     )
-    # ========================================================
     # STATUS KPI ROW
-    # ========================================================
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         render_kpi_card(
@@ -643,13 +587,8 @@ def render_top_kpis(df):
         )
 
 
-# ============================================================
-# STATUS DONUT
-
-# ============================================================
-
-
 def render_status_donut(df):
+    """Render the distribution of check outcomes."""
     status_summary = (
         df.groupby(
             "status",
@@ -729,13 +668,8 @@ def render_status_donut(df):
     )
 
 
-# ============================================================
-# QUALITY BY DATA LAYER
-
-# ============================================================
-
-
 def render_layer_quality(df):
+    """Render quality scores by data layer."""
     layer_df = df.copy()
     layer_df["passed"] = layer_df["status"].eq("pass").astype(int)
     summary = layer_df.groupby(
@@ -799,13 +733,8 @@ def render_layer_quality(df):
     )
 
 
-# ============================================================
-# QUALITY DIMENSIONS
-
-# ============================================================
-
-
 def render_quality_dimensions(df):
+    """Render quality scores by quality dimension."""
     dimension_df = df[df["quality_dimension"] != "Other"].copy()
     if dimension_df.empty:
         st.info("No quality dimension data is available.")
@@ -872,13 +801,8 @@ def render_quality_dimensions(df):
     )
 
 
-# ============================================================
-# QUALITY TREND
-
-# ============================================================
-
-
 def render_quality_trend(df):
+    """Render pass-rate trends over time by data layer."""
     trend = df.copy()
     trend["passed"] = trend["status"].eq("pass").astype(int)
     summary = trend.groupby(
@@ -950,13 +874,8 @@ def render_quality_trend(df):
     )
 
 
-# ============================================================
-# STATUS OVER TIME
-
-# ============================================================
-
-
 def render_status_over_time(df):
+    """Render check outcomes over time."""
     summary = (
         df.groupby(
             [
@@ -1013,13 +932,8 @@ def render_status_over_time(df):
     )
 
 
-# ============================================================
-# FAILING TABLES
-
-# ============================================================
-
-
 def render_failing_tables(df):
+    """Render tables with the highest number of failed checks."""
     failures = df[df["status"].eq("fail")].copy()
     if failures.empty:
         st.success("No failed checks for the selected period.")
@@ -1079,13 +993,8 @@ def render_failing_tables(df):
     )
 
 
-# ============================================================
-# FAILURE TYPES
-
-# ============================================================
-
-
 def render_failure_types(df):
+    """Render failures grouped by check type."""
     failures = df[df["status"].eq("fail")].copy()
     if failures.empty:
         st.success("No failed checks.")
@@ -1134,13 +1043,8 @@ def render_failure_types(df):
     )
 
 
-# ============================================================
-# SCAN DURATION TREND
-
-# ============================================================
-
-
 def render_scan_duration(df):
+    """Render the average scan duration trend."""
     scans = (
         df[
             [
@@ -1206,13 +1110,8 @@ def render_scan_duration(df):
     )
 
 
-# ============================================================
-# CHECKS PER TABLE
-
-# ============================================================
-
-
 def render_checks_per_table(df):
+    """Render the number of checks executed per table."""
     summary = (
         df.groupby(
             "table_name",
@@ -1257,13 +1156,8 @@ def render_checks_per_table(df):
     )
 
 
-# ============================================================
-# LATEST TABLE HEALTH
-
-# ============================================================
-
-
 def render_latest_table_health(df):
+    """Render the latest health summary for monitored tables."""
     latest = get_latest_scan_rows(df)
     if latest.empty:
         st.info("No latest scan data is available.")
@@ -1394,13 +1288,8 @@ def render_latest_table_health(df):
     )
 
 
-# ============================================================
-# STATUS HISTORY HEATMAP
-
-# ============================================================
-
-
 def render_status_heatmap(df):
+    """Render historical check status as a heatmap."""
     history = df.copy()
     history = history[history["scan_start_ts"].notna()].copy()
     if history.empty:
@@ -1457,6 +1346,7 @@ def render_status_heatmap(df):
         "warning": 1,
         "pass": 2,
     }
+    # Plotly needs numeric heatmap values; customdata keeps readable status labels.
     numeric = pivot.replace(status_map)
     fig = go.Figure(
         data=go.Heatmap(
@@ -1467,37 +1357,15 @@ def render_status_heatmap(df):
             zmin=0,
             zmax=2,
             colorscale=[
-                [
-                    0.00,
-                    "#ef4444",
-                ],
-                [
-                    0.33,
-                    "#ef4444",
-                ],
-                [
-                    0.34,
-                    "#f59e0b",
-                ],
-                [
-                    0.66,
-                    "#f59e0b",
-                ],
-                [
-                    0.67,
-                    "#22c55e",
-                ],
-                [
-                    1.00,
-                    "#22c55e",
-                ],
+                [0.00, "#ef4444"],
+                [0.33, "#ef4444"],
+                [0.34, "#f59e0b"],
+                [0.66, "#f59e0b"],
+                [0.67, "#22c55e"],
+                [1.00, "#22c55e"],
             ],
             colorbar={
-                "tickvals": [
-                    0,
-                    1,
-                    2,
-                ],
+                "tickvals": [0, 1, 2],
                 "ticktext": [
                     "Fail",
                     "Warn",
@@ -1538,13 +1406,8 @@ def render_status_heatmap(df):
     )
 
 
-# ============================================================
-# FAILURE DETAILS
-
-# ============================================================
-
-
 def render_failure_details(df):
+    """Display detailed failed check records."""
     failures = df[df["status"].eq("fail")].copy()
     if failures.empty:
         st.success("No failed checks for the selected period.")
@@ -1577,13 +1440,8 @@ def render_failure_details(df):
     )
 
 
-# ============================================================
-# WARNING DETAILS
-
-# ============================================================
-
-
 def render_warning_details(df):
+    """Display detailed warning check records."""
     warnings = df[
         df["status"].isin(
             [
@@ -1623,13 +1481,8 @@ def render_warning_details(df):
     )
 
 
-# ============================================================
-# SCHEMA DETAILS
-
-# ============================================================
-
-
 def render_schema_details(df):
+    """Display schema check results and summary metrics."""
     schema_df = df[df["check_type"].eq("schema")].copy()
     if schema_df.empty:
         st.info("No schema checks are available.")
@@ -1680,13 +1533,8 @@ def render_schema_details(df):
     )
 
 
-# ============================================================
-# RAW CHECK RESULTS
-
-# ============================================================
-
-
 def render_all_results(df):
+    """Display paginated check-level quality results."""
     display_columns = [
         "scan_id",
         "data_level",
@@ -1731,12 +1579,11 @@ def render_all_results(df):
         (total_rows + page_size - 1) // page_size,
     )
     page_key = "all_check_results_page"
+    # Store the current page in session state so pagination survives reruns.
     if page_key not in st.session_state:
         st.session_state[page_key] = 1
-    if st.session_state[page_key] > total_pages:
-        st.session_state[page_key] = total_pages
-    if st.session_state[page_key] < 1:
-        st.session_state[page_key] = 1
+    st.session_state[page_key] = min(st.session_state[page_key], total_pages)
+    st.session_state[page_key] = max(st.session_state[page_key], 1)
     previous_col, page_col, next_col = st.columns([1, 2, 1])
     with previous_col:
         if st.button(
@@ -1789,13 +1636,8 @@ def render_all_results(df):
     )
 
 
-# ============================================================
-# SIDEBAR FILTERS
-
-# ============================================================
-
-
 def render_filters(df):
+    """Render sidebar filters and return the selected values."""
     st.sidebar.markdown("## Data Quality Filters")
     levels = sorted(value for value in df["data_level"].unique() if value)
     selected_levels = st.sidebar.multiselect(
@@ -1878,13 +1720,8 @@ def render_filters(df):
     }
 
 
-# ============================================================
-# MAIN
-
-# ============================================================
-
-
 def main():
+    """Render the complete Data Quality Monitoring dashboard."""
     st.markdown(
         """
         <div class="dq-title">
@@ -1910,13 +1747,13 @@ def main():
         df = load_data()
     except ConnectionError as exc:
         st.error("Unable to connect to Trino.")
-        st.markdown(f"""
+        st.markdown(rf"""
             **Trino configuration**
-            - Host: `{TRINO_HOST}`
-            - Port: `{TRINO_PORT}`
-            - Catalog: `{TRINO_CATALOG}`
-            - Schema: `{TRINO_SCHEMA}`
-            - Table: `{TRINO_DQ_TABLE}`
+            - Host: \`{TRINO_HOST}\`
+            - Port: \`{TRINO_PORT}\`
+            - Catalog: \`{TRINO_CATALOG}\`
+            - Schema: \`{TRINO_SCHEMA}\`
+            - Table: \`{TRINO_DQ_TABLE}\`
             """)
         with st.expander("Technical details"):
             st.exception(exc)
@@ -1984,9 +1821,8 @@ def main():
         render_layer_quality(filtered_df)
     render_quality_dimensions(filtered_df)
     st.divider()
-    # ========================================================
+
     # TREND
-    # ========================================================
     section_header(
         "Quality Trend",
         ("Track whether data quality is " "improving or deteriorating over time."),
@@ -2002,9 +1838,8 @@ def main():
     with c2:
         render_checks_per_table(filtered_df)
     st.divider()
-    # ========================================================
+
     # PROBLEM AREAS
-    # ========================================================
     section_header(
         "Problem Areas",
         ("Identify tables and check types " "that require the most attention."),
@@ -2015,18 +1850,16 @@ def main():
     with c2:
         render_failure_types(filtered_df)
     st.divider()
-    # ========================================================
+
     # TABLE HEALTH
-    # ========================================================
     section_header(
         "Latest Table Health",
         ("Review the most recent quality " "position of every monitored table."),
     )
     render_latest_table_health(filtered_df)
     st.divider()
-    # ========================================================
+
     # STATUS HISTORY
-    # ========================================================
     section_header(
         "Check Status History",
         (
@@ -2035,6 +1868,7 @@ def main():
             "problems."
         ),
     )
+    # Status history is easier to interpret for one table at a time.
     selected_tables = filters["tables"]
     if len(selected_tables) == 1:
         render_status_heatmap(filtered_df)
@@ -2046,9 +1880,8 @@ def main():
     else:
         st.info("Apply a table filter in the sidebar to view " "Check Status History.")
     st.divider()
-    # ========================================================
+
     # DIAGNOSTICS
-    # ========================================================
     section_header(
         "Quality Diagnostics",
         ("Drill into failures, warnings, " "schema differences and individual checks."),
@@ -2074,9 +1907,8 @@ def main():
         render_schema_details(filtered_df)
     with results_tab:
         render_all_results(filtered_df)
-    # ========================================================
+
     # REFRESH
-    # ========================================================
     st.sidebar.divider()
     if st.sidebar.button(
         "Refresh Data",

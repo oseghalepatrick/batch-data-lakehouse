@@ -20,21 +20,22 @@ logger = get_logger(__name__)
 
 
 class SodaQualityTransformer:
+    """Transform Soda scan pivots into row-level quality records for Iceberg."""
+
     VALID_DATA_LEVELS = {"bronze", "silver", "gold"}
 
-    def __init__(self, columns, values, data_level, scan_start_ts=None, scan_end_ts=None):
+    def __init__(self, columns, values, data_level):
+        """Initialise the transformer from pivot columns, values, and data layer."""
         self.columns = [column.strip('"') for column in columns]
         self.values = values
         self.data_level = data_level.lower().strip()
+        # Rebuild the pivot record produced by SodaDQProcessor.
         self.record = dict(zip(self.columns, self.values))
-        self.scan_start_ts = scan_start_ts
-        self.scan_end_ts = scan_end_ts
-
         self._validate_data_level()
-
         self.scan_id = self._generate_scan_id()
 
     def _validate_data_level(self):
+        """Validate that the supplied data layer is supported."""
         if self.data_level not in self.VALID_DATA_LEVELS:
             raise ValueError(
                 f"Invalid data_level '{self.data_level}'. "
@@ -43,61 +44,44 @@ class SodaQualityTransformer:
 
     @staticmethod
     def _safe_json_load(value):
+        """Return a dictionary from JSON input, or an empty dictionary if invalid."""
         if value is None:
             return {}
-
         if isinstance(value, dict):
             return value
-
         if isinstance(value, str):
             value = value.strip()
-
             if not value:
                 return {}
-
             try:
                 return json.loads(value)
             except json.JSONDecodeError:
                 return {}
-
         return {}
 
     def _generate_scan_id(self):
-        if self.scan_start_ts:
-            ts = str(self.scan_start_ts)
-        else:
-            ts = str(self.record.get("scan_start_ts", ""))
-    
+        """Generate a deterministic identifier for the current Soda scan."""
         key = "|".join(
             [
                 self.data_level,
                 str(self.record.get("definition_name", "")),
                 str(self.record.get("table_name", "")),
                 str(self.record.get("data_timestamp", "")),
-                # str(self.record.get("scan_start_ts", "")),
-                ts
+                str(self.record.get("scan_start_ts", "")),
             ]
         )
-
+        # A stable hash groups all rows produced by the same Soda scan.
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]
 
     def _get_base_record(self):
-
-        if self.scan_start_ts:
-            start_ts = str(self.scan_start_ts)
-            end_ts = str(self.scan_end_ts)
-        else:
-            start_ts = str(self.record.get("scan_start_ts", ""))
-            end_ts = str(self.record.get("scan_end_ts", ""))
+        """Build metadata shared by every transformed quality-check row."""
         return {
             "scan_id": self.scan_id,
             "data_level": self.data_level,
             "definition_name": self.record.get("definition_name"),
             "data_timestamp": self.record.get("data_timestamp"),
-            # "scan_start_ts": self.record.get("scan_start_ts"),
-            # "scan_end_ts": self.record.get("scan_end_ts"),
-            "scan_start_ts": start_ts,
-            "scan_end_ts": end_ts,
+            "scan_start_ts": self.record.get("scan_start_ts"),
+            "scan_end_ts": self.record.get("scan_end_ts"),
             "has_errors": self.record.get("has_errors"),
             "has_warnings": self.record.get("has_warnings"),
             "has_failures": self.record.get("has_failures"),
@@ -107,9 +91,9 @@ class SodaQualityTransformer:
         }
 
     def _transform_standard_metrics(self):
+        """Transform standard Soda metrics into row-level records."""
         base = self._get_base_record()
         rows = []
-
         check_types = [
             "duplicate_count",
             "missing_count",
@@ -120,14 +104,11 @@ class SodaQualityTransformer:
             "max",
             "avg",
         ]
-
         for check_type in check_types:
             metrics = self._safe_json_load(self.record.get(check_type))
-
             for column_name, result in metrics.items():
                 if not isinstance(result, dict):
                     continue
-
                 row = {
                     **base,
                     "check_type": check_type,
@@ -142,33 +123,25 @@ class SodaQualityTransformer:
                     "expected_type": None,
                     "actual_type": None,
                 }
-
                 if check_type == "missing_count":
                     row["missing_count"] = result.get("check_value")
-
                 elif check_type == "missing_percent":
                     row["missing_count"] = result.get("missing_count")
-
                 elif check_type == "invalid_count":
                     row["invalid_count"] = result.get("check_value")
-
                 elif check_type == "invalid_percent":
                     row["invalid_count"] = result.get("invalid_count")
-
                 rows.append(row)
-
         return rows
 
     def _transform_freshness(self):
+        """Transform freshness checks into row-level records."""
         base = self._get_base_record()
         rows = []
-
         metrics = self._safe_json_load(self.record.get("freshness"))
-
         for column_name, result in metrics.items():
             if not isinstance(result, dict):
                 continue
-
             rows.append(
                 {
                     **base,
@@ -185,19 +158,16 @@ class SodaQualityTransformer:
                     "actual_type": None,
                 }
             )
-
         return rows
 
     def _transform_schema(self):
+        """Transform schema checks into row-level records."""
         base = self._get_base_record()
         rows = []
-
         metrics = self._safe_json_load(self.record.get("schema"))
-
         for column_name, result in metrics.items():
             if not isinstance(result, dict):
                 continue
-
             rows.append(
                 {
                     **base,
@@ -214,21 +184,19 @@ class SodaQualityTransformer:
                     "actual_type": result.get("actual_type"),
                 }
             )
-
         return rows
 
     def transform(self):
+        """Combine supported quality checks into one long-form dataframe."""
         rows = []
-
+        # Flatten each metric family into a common long-form schema.
         rows.extend(self._transform_standard_metrics())
         rows.extend(self._transform_freshness())
         rows.extend(self._transform_schema())
-
         df = pd.DataFrame(rows)
-
         if df.empty:
             return df
-
+        # Build a deterministic row key from scan, check type, and column.
         df.insert(
             0,
             "primary_id",
@@ -240,13 +208,12 @@ class SodaQualityTransformer:
                 + df["column_name"].fillna("").astype(str)
             ),
         )
-
         return df
 
     @staticmethod
     def prepare_dataframe_for_iceberg(df):
+        """Normalise dataframe types before Arrow and Iceberg conversion."""
         df = df.copy()
-
         timestamp_columns = [
             "data_timestamp",
             "scan_start_ts",
@@ -254,7 +221,7 @@ class SodaQualityTransformer:
             "source_data_inserted_at_utc",
             "max_column_timestamp",
         ]
-
+        # Use UTC timestamps so Arrow receives consistent timezone-aware values.
         for column in timestamp_columns:
             if column in df.columns:
                 df[column] = pd.to_datetime(
@@ -262,36 +229,31 @@ class SodaQualityTransformer:
                     utc=True,
                     errors="coerce",
                 )
-
         integer_columns = ["row_count", "missing_count", "invalid_count"]
-
         for column in integer_columns:
             if column in df.columns:
                 df[column] = pd.to_numeric(
                     df[column],
                     errors="coerce",
                 ).astype("Int64")
-
         if "check_value" in df.columns:
             df["check_value"] = pd.to_numeric(
                 df["check_value"],
                 errors="coerce",
             )
-
         boolean_columns = [
             "has_errors",
             "has_warnings",
             "has_failures",
         ]
-
         for column in boolean_columns:
             if column in df.columns:
                 df[column] = df[column].astype("boolean")
-
         return df
 
     @staticmethod
     def get_arrow_schema():
+        """Return the Arrow schema used by the quality-results Iceberg table."""
         return pa.schema(
             [
                 pa.field("primary_id", pa.string(), nullable=False),
@@ -323,18 +285,16 @@ class SodaQualityTransformer:
 
     @staticmethod
     def evolve_table_schema(table):
+        """Add supported missing columns to an existing Iceberg table."""
         field_names = {field.name for field in table.schema().fields}
-
         if "data_level" not in field_names:
             with table.update_schema() as update:
                 update.add_column("data_level", StringType(), required=False)
-
             table.refresh()
 
     @staticmethod
     def table_exists(catalog, identifier: str) -> bool:
-        """Return True when an Iceberg table exists."""
-
+        """Return whether the requested Iceberg table exists."""
         try:
             catalog.load_table(identifier)
             return True
@@ -350,25 +310,20 @@ class SodaQualityTransformer:
         create_if_missing=True,
         max_retries=6,
     ):
+        """Append transformed quality results to Iceberg with commit retries."""
         if df.empty:
             logger.info("No data quality records to write.")
             return
-
         df = cls.prepare_dataframe_for_iceberg(df)
-
         arrow_schema = cls.get_arrow_schema()
-
+        # Reuse the table when present; otherwise create the namespace and table.
         try:
             table = catalog.load_table(table_identifier)
-
             cls.evolve_table_schema(table)
-
         except Exception:
             if not create_if_missing:
                 raise
-
             namespace = table_identifier.rsplit(".", 1)[0]
-
             try:
                 catalog.create_namespace(namespace)
             except NamespaceAlreadyExistsError:
@@ -376,7 +331,6 @@ class SodaQualityTransformer:
             except Exception:
                 logger.exception(f"Unexpected error creating namespace: {namespace}")
                 raise
-
             if not cls.table_exists(catalog, table_identifier):
                 try:
                     table = catalog.create_table(
@@ -387,42 +341,34 @@ class SodaQualityTransformer:
                     table = catalog.load_table(table_identifier)
             else:
                 table = catalog.load_table(table_identifier)
-
+        # Build the Arrow table once; only the Iceberg commit is retried.
         arrow_table = pa.Table.from_pandas(
             df,
             schema=arrow_schema,
             preserve_index=False,
             safe=True,
         )
-
         for attempt in range(1, max_retries + 1):
             try:
                 # Always reload the latest table metadata/snapshot
                 # before each commit attempt.
                 table = catalog.load_table(table_identifier)
-
                 table.append(arrow_table)
-
                 logger.info(
                     f"Successfully wrote {arrow_table.num_rows} rows "
                     f"to {table_identifier}"
                 )
-
                 return
-
             except (CommitFailedException, ValidationException) as exc:
-
                 if attempt == max_retries:
                     logger.info(
                         f"Failed to write to {table_identifier} "
                         f"after {max_retries} attempts."
                     )
                     raise
-
+                # Exponential backoff plus jitter reduces repeated commit collisions.
                 delay = min(0.25 * (2 ** (attempt - 1)), 5.0)
-
                 delay += random.uniform(0, 0.25)
-
                 logger.info(
                     f"Concurrent Iceberg commit detected for {table_identifier}. "
                     f"Retrying {attempt}/{max_retries} in {delay:.2f}s. "

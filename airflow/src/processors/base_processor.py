@@ -1,3 +1,5 @@
+"""Shared PyIceberg processing utilities for Silver-layer data management."""
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -38,15 +40,18 @@ logger = get_logger(__name__)
 
 
 class BaseProcessor:
+    """Provide common storage, schema, partitioning, and Iceberg write operations."""
 
     def __init__(self):
+        """Initialise catalog, S3 filesystem, and MinIO storage clients."""
         self.catalog = get_catalog_config()
         self.s3 = get_s3fs_config()
         cfg = get_config()["data_generation"]
         self.storage = MinIOStorage(cfg["minio"])
 
     def normalise_schema(self, table: pa.Table):
-
+        """Normalise identifier columns to consistent Arrow integer types."""
+        # Identifier fields are normalised to int64 for consistent Iceberg schemas.
         integer_columns = [
             "transaction_id",
             "customer_id",
@@ -57,23 +62,21 @@ class BaseProcessor:
             if column in table.column_names:
                 index = table.schema.get_field_index(column)
                 table = table.set_column(index, column, table[column].cast(pa.int64()))
-
         return table
 
     def read_parquet(self, path):
-
+        """Read a Parquet file from object storage and normalise its schema."""
         logger.info(f"Reading parquet {path}")
+        # s3fs expects bucket/key paths rather than the s3a:// URI prefix.
         path = path.replace("s3a://", "")
         table = pq.read_table(path, filesystem=self.s3)
         table = self.normalise_schema(table)
         logger.info(f"file schema: \n{table.schema}\n")
         logger.info(f"Records: {table.num_rows}")
-
         return table
 
     def create_namespace(self, namespace: str) -> None:
-        """Create namespace when it does not already exist."""
-
+        """Create the Iceberg namespace when it does not already exist."""
         try:
             self.catalog.create_namespace(namespace)
         except NamespaceAlreadyExistsError:
@@ -83,8 +86,7 @@ class BaseProcessor:
             raise
 
     def table_exists(self, identifier: str) -> bool:
-        """Return True when an Iceberg table exists."""
-
+        """Return whether the requested Iceberg table exists."""
         try:
             self.catalog.load_table(identifier)
             return True
@@ -92,47 +94,24 @@ class BaseProcessor:
             return False
 
     def load_table(self, identifier: str):
-        """Load an existing Iceberg table."""
-
+        """Load and return an existing Iceberg table."""
         return self.catalog.load_table(identifier)
 
     @staticmethod
     def build_partition_spec(
         schema: Schema, partitions: list[dict] | None = None
     ) -> PartitionSpec:
-        """
-        Build an Iceberg partition specification.
-
-        Example:
-            partitions=[
-                {
-                    "column": "transaction_timestamp",
-                    "transform": "day",
-                    "name": "transaction_day",
-                }
-            ]
-
-        Supported transforms:
-            identity
-            day
-            month
-            year
-            bucket
-        """
-
+        """Build an Iceberg partition specification from configured transforms."""
         if not partitions:
             return PartitionSpec()
-
         partition_fields = []
-
         # Partition field IDs must not collide with schema field IDs.
+        # Use a separate ID range so partition field IDs do not clash with schema fields.
         next_partition_id = 1000
-
         for partition in partitions:
             column = partition["column"]
             source_field = schema.find_field(column)
             transform_name = partition.get("transform", "identity").lower()
-
             if transform_name == "identity":
                 transform = IdentityTransform()
             elif transform_name == "day":
@@ -150,7 +129,6 @@ class BaseProcessor:
                 transform = BucketTransform(buckets)
             else:
                 raise ValueError(f"Unsupported partition transform: {transform_name}")
-
             partition_name = partition.get("name", f"{column}_{transform_name}")
             partition_fields.append(
                 PartitionField(
@@ -161,12 +139,12 @@ class BaseProcessor:
                 )
             )
             next_partition_id += 1
-
         return PartitionSpec(*partition_fields)
 
     def arrow_to_iceberg_schema(self, arrow_schema):
-
+        """Convert a PyArrow schema into an equivalent Iceberg schema."""
         fields = []
+        # Map supported Arrow types explicitly to their Iceberg equivalents.
         for idx, field in enumerate(arrow_schema, start=1):
             if pa.types.is_string(field.type) or pa.types.is_large_string(field.type):
                 iceberg_type = StringType()
@@ -189,7 +167,6 @@ class BaseProcessor:
                 iceberg_type = BooleanType()
             else:
                 raise ValueError(f"Unsupported type: {field.type}")
-
             fields.append(
                 NestedField(
                     field_id=idx,
@@ -198,7 +175,6 @@ class BaseProcessor:
                     required=False,
                 )
             )
-
         schema = Schema(*fields)
         logger.info(f"Table schema:\n{schema}")
         return schema
@@ -210,19 +186,15 @@ class BaseProcessor:
         partitions: list[dict] | None = None,
         properties: dict | None = None,
     ):
-        """
-        Create an Iceberg v2 table.
-        Partitioning is optional.
-        """
-
+        """Create an Iceberg v2 table with optional partitioning."""
         namespace = identifier.rsplit(".", 1)[0]
         self.create_namespace(namespace)
         schema = self.arrow_to_iceberg_schema(arrow_table.schema)
         partition_spec = self.build_partition_spec(schema, partitions)
+        # Iceberg v2 enables the row-level operations used by this project.
         table_properties = {"format-version": "2"}
         if properties:
             table_properties.update(properties)
-
         logger.info(f"Creating Iceberg table: {identifier}")
         table = self.catalog.create_table(
             identifier,
@@ -242,15 +214,11 @@ class BaseProcessor:
         arrow_table: pa.Table,
         partitions: list[dict] | None = None,
     ):
-        """
-        Append data.
-        Creates the table automatically when it does not exist.
-        """
-
+        """Append data, creating the Iceberg table when required."""
+        # Avoid unnecessary Iceberg commits when there is no data to append.
         if arrow_table.num_rows == 0:
             logger.info(f"No records to append to {identifier}")
             return
-
         if not self.table_exists(identifier):
             table = self.create_table(
                 identifier=identifier,
@@ -260,55 +228,41 @@ class BaseProcessor:
         else:
             table = self.load_table(identifier)
         logger.info(f"Appending {arrow_table.num_rows} records to {identifier}")
-
         table.append(arrow_table)
         logger.info(f"Append completed: {identifier}")
 
     def _to_scd_arrow(self, df: pd.DataFrame) -> pa.Table:
-        """
-        Convert an SCD DataFrame to PyArrow.
-
-        effective_start and effective_end are DATE columns.
-        NULL effective_end values remain Arrow NULLs.
-        """
-
+        """Convert an SCD dataframe to Arrow with explicit DATE columns."""
         df = df.copy()
-
         date_columns = [
             column
             for column in ["effective_start", "effective_end"]
             if column in df.columns
         ]
-
         # Vectorised conversion to Python date values
         for column in date_columns:
             df[column] = pd.to_datetime(
                 df[column],
                 errors="coerce",
             ).dt.date
-
         # Convert the remaining DataFrame columns
         arrow_table = pa.Table.from_pandas(
             df,
             preserve_index=False,
         )
-
         # Explicitly enforce DATE type.
         # This is important when effective_end contains only NULL values.
         for column in date_columns:
             column_index = arrow_table.schema.get_field_index(column)
-
             date_array = pa.array(
                 df[column],
                 type=pa.date32(),
             )
-
             arrow_table = arrow_table.set_column(
                 column_index,
                 column,
                 date_array,
             )
-
         return arrow_table
 
     def scd_type2_merge(
@@ -318,132 +272,93 @@ class BaseProcessor:
         primary_key: str,
         tracked_columns: list[str],
     ):
-        """
-        Perform incremental SCD Type II merge.
-
-        Logic:
-        - New keys:
-            Insert as current records.
-
-        - Changed keys:
-            1. Delete existing current record only.
-            2. Append expired version.
-            3. Append new current version.
-
-        - Unchanged keys:
-            Ignore.
-
-        Historical records are preserved.
-
-        Required columns:
-            effective_start
-            effective_end
-            is_current
-        """
-
+        """Apply an incremental SCD Type II merge while preserving history."""
         # Prepare incoming data
+        # Incoming dimension rows start as the current SCD version.
         source_df = source.to_pandas()
         source_df["effective_end"] = None
         source_df["is_current"] = True
         logger.info(f"Incoming records: {len(source_df)}")
-
         # Initial load
         if not self.table_exists(identifier):
             logger.info(f"Creating initial SCD table {identifier}")
-
             arrow_append = self._to_scd_arrow(source_df)
             logger.info(f"Append schema:\n{arrow_append.schema}")
             table = self.append(identifier, arrow_append)
             logger.info("Initial SCD load completed")
-
             return
-
         # Load existing records only for incoming keys
         table = self.load_table(identifier)
         keys = source_df[primary_key].dropna().unique().tolist()
         if not keys:
             logger.info("No keys received")
             return
-
         key_values = ",".join(str(x) for x in keys)
+        # Read only existing records for keys present in the incoming batch.
         existing_df = (
             table.scan(row_filter=(f"{primary_key} IN ({key_values})"))
             .to_arrow()
             .to_pandas()
         )
-
         if existing_df.empty:
             logger.info("No matching records found, inserting new records")
-
             arrow_append = self._to_scd_arrow(source_df)
             logger.info(f"Append schema:\n{arrow_append.schema}")
             self.append(identifier, arrow_append)
             return
-
         current_df = existing_df[existing_df["is_current"].eq(True)].copy()
         logger.info(f"Current matching records: {len(current_df)}")
-
         # Identify new records
         new_records = source_df[
             ~source_df[primary_key].isin(current_df[primary_key])
         ].copy()
         logger.info(f"New records: {len(new_records)}")
-
         # Identify changed records
         joined = source_df.merge(
             current_df, on=primary_key, suffixes=("_new", "_old"), how="inner"
         )
-
         # Compare tracked columns only
+        # Mark a row as changed when any tracked attribute differs.
         change_mask = pd.Series(False, index=joined.index)
-
         for col in tracked_columns:
-
             new_col = f"{col}_new"
             old_col = f"{col}_old"
-
             column_changed = joined[new_col].ne(joined[old_col]) & ~(
                 joined[new_col].isna() & joined[old_col].isna()
             )
             change_mask |= column_changed
-
         changed_records = joined[change_mask].copy()
         changed_keys = changed_records[primary_key].tolist()
-
         # Map primary key -> new effective_start
         expired_date = changed_records.set_index(primary_key)[
             "effective_start_new"
         ].to_dict()
         logger.info(f"Changed records: {len(changed_keys)}")
-
         # Nothing changed
         if not changed_keys and new_records.empty:
             logger.info("No SCD changes detected")
             return
-
         # Prepare expired versions
         expired_records = current_df[current_df[primary_key].isin(changed_keys)].copy()
         expired_records["effective_end"] = expired_records[primary_key].map(
             expired_date
         )
+        # Expire the previous current version before inserting the replacement.
         expired_records["is_current"] = False
-
         # Prepare new versions
         changed_new_records = source_df[
             source_df[primary_key].isin(changed_keys)
         ].copy()
         inserts = pd.concat([new_records, changed_new_records], ignore_index=True)
-
         inserts["effective_end"] = None
         inserts["is_current"] = True
-
         # Delete only active records
         if changed_keys:
             delete_values = ",".join(str(x) for x in changed_keys)
             delete_filter = f"{primary_key} IN ({delete_values}) AND is_current = true"
             logger.info(f"Deleting current records: {delete_filter}")
+            # Delete only active versions; historical records remain untouched.
             table.delete(delete_filter=delete_filter)
-
         # Append expired + new versions
         append_df = pd.concat([expired_records, inserts], ignore_index=True)
         if not append_df.empty:
@@ -458,16 +373,12 @@ class BaseProcessor:
         identifier: str,
         arrow_table: pa.Table,
     ):
-        """Overwrite an existing Iceberg table."""
-
+        """Overwrite an existing Iceberg table with the supplied Arrow table."""
         table = self.load_table(identifier)
-
         logger.info(
             "Overwriting %s with %s records",
             identifier,
             arrow_table.num_rows,
         )
-
         table.overwrite(arrow_table)
-
         logger.info(f"Overwrite completed: {identifier}")
