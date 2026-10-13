@@ -107,10 +107,13 @@ The `profiles` directory is intentionally excluded through `.gitignore` because 
 
 Because `DBT_PROFILES_DIR` and `DBT_PROJECT_DIR` are already configured in the Airflow Docker image, dbt can be run without passing `--profiles-dir` or `--project-dir` explicitly.
 
+Enter the running Airflow worker container:
 
-Run the following commands from the dbt project directory.
+```bash
+docker exec -it batch-data-lakehouse-airflow-worker-1 bash
+```
 
-Validate the connection and configuration:
+Validate the Trino connection and dbt project configuration:
 
 ```bash
 dbt debug
@@ -132,6 +135,12 @@ Build and test together:
 
 ```bash
 dbt build
+```
+
+Exit the Airflow worker shell when finished:
+
+```bash
+exit
 ```
 
 In normal operation, dbt is executed through Apache Airflow as part of the OpenLakehouse batch pipeline.

@@ -1,4 +1,4 @@
-# OpenLakehouse: End-to-End Data Engineering, Quality & Analytics Platform
+# OpenLakehouse: End-to-End Batch Lakehouse with CDC, Data Quality & Analytics Platform
 
 ![Docker](https://img.shields.io/badge/Docker-Containerisation-2496ED?logo=docker&logoColor=white)
 ![Apache Airflow](https://img.shields.io/badge/Apache%20Airflow-Orchestration-017CEE?logo=apacheairflow&logoColor=white)
@@ -15,7 +15,9 @@
 
 ## Overview
 
-OpenLakehouse is a containerised, open-source **batch data pipeline and lakehouse platform** that demonstrates an end-to-end modern data engineering workflow. Python-generated source files are ingested into a Bronze layer, transformed into Silver Iceberg tables, modelled into Gold analytics tables, validated with automated data quality checks, queried with SQL, and presented through interactive dashboards.
+OpenLakehouse is a containerised, open-source batch data pipeline and lakehouse platform that demonstrates an end-to-end modern data engineering workflow with batch CDC and SCD Type II history tracking for changing customer and product data.
+
+Python-generated source files are ingested into a Bronze layer, transformed into Silver Apache Iceberg tables, modelled into Gold analytics tables, validated with automated data quality checks, queried with SQL, and presented through interactive dashboards.
 
 The platform follows a Bronze, Silver, and Gold medallion architecture and is designed as a reproducible local environment for development, learning, demonstration, and experimentation.
 
@@ -444,7 +446,7 @@ Because `DBT_PROFILES_DIR` and `DBT_PROJECT_DIR` are already configured in the A
 To test dbt and Soda from the same runtime used by the pipeline, enter the Airflow worker container:
 
 ```bash
-docker exec -it open-datalake-project-airflow-worker-1 bash
+docker exec -it batch-data-lakehouse-airflow-worker-1 bash
 ```
 
 Validate the dbt connection and project configuration:
@@ -589,6 +591,18 @@ Before triggering the pipeline, confirm that:
 Once these checks pass, trigger the Airflow DAG and validate the Bronze, Silver, Gold, data quality, and dashboard outputs.
 
 ## Useful Commands
+
+Enter the Airflow worker to test dbt and Soda:
+
+```bash
+docker exec -it batch-data-lakehouse-airflow-worker-1 bash
+```
+
+Open the Trino CLI:
+
+```bash
+docker exec -it trino trino --server http://localhost:8089
+```
 
 Check all services:
 

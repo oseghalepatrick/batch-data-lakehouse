@@ -49,7 +49,7 @@ airflow/data_quality/
 Processed Soda results are persisted into:
 
 ```text
-iceberg.silver.data_quality_results
+iceberg.gold.data_quality_results
 ```
 
 The results are queried through Trino and displayed in the Streamlit Data Quality Monitoring dashboard.
@@ -80,6 +80,40 @@ The monitoring layer covers checks such as:
 - Schema
 - Timeliness
 - Distribution
+
+## Testing the Soda Connection
+
+Soda runs from an isolated Python 3.11 environment inside the Airflow image.
+
+Enter the running Airflow worker container:
+
+```bash
+docker exec -it batch-data-lakehouse-airflow-worker-1 bash
+```
+
+Validate the Soda Trino data source against the Silver schema:
+
+```bash
+SCHEMA=silver /opt/airflow/soda_venv/bin/soda test-connection \
+  -d trino \
+  -c /opt/airflow/data_quality/configuration.yml
+```
+
+Validate the Gold schema:
+
+```bash
+SCHEMA=gold /opt/airflow/soda_venv/bin/soda test-connection \
+  -d trino \
+  -c /opt/airflow/data_quality/configuration.yml
+```
+
+The `SCHEMA` variable is required because `configuration.yml` resolves the Trino schema from `${SCHEMA}`.
+
+Exit the worker shell when finished:
+
+```bash
+exit
+```
 
 ## Technology
 
