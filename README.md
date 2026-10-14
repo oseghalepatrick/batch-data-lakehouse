@@ -62,7 +62,7 @@ The Sales Analytics dashboard queries Gold aggregate tables through Trino and pr
 
 ### Data Quality Monitoring
 
-The Data Quality dashboard queries `iceberg.silver.data_quality_results` and provides pass/fail/warning KPIs, quality trends, data-layer health, schema diagnostics, failed and warning checks, status history, and paginated check-level results.
+The Data Quality dashboard queries `iceberg.gold.data_quality_results` and provides pass/fail/warning KPIs, quality trends, data-layer health, schema diagnostics, failed and warning checks, status history, and paginated check-level results.
 
 ![Data Quality Monitoring Dashboard](assets/data_quality_dashboard.png)
 
